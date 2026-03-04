@@ -21,7 +21,7 @@
 - 新增脚本管理能力：
   - 存储：`src/lib/store/scripts.ts`
   - 前端：`gui/src/components/panels/HookScriptsManager.tsx`
-- 新增内置脚本目录：`builtin-frida-script/`、`public-frida-script/`
+- 新增内置脚本目录：`builtin-frida-script/`
 - 新增内置脚本清单：`src/lib/builtin-hooks.ts`
 
 ## 4. 时间线与会话可观测性增强
@@ -47,4 +47,3 @@
 ## 7. 仓库维护性调整
 
 - 为避免误提交本地运行数据，已将 `.grapefruit-state/` 加入 `.gitignore`。
-
