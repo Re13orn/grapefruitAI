@@ -7,10 +7,23 @@ import ioc from "socket.io-client";
 import type { Server } from "socket.io";
 
 import attach from "../ws.ts";
+import { getUDID, probeLocalTcpListener } from "./helpers/environment.ts";
 
 function createTestServer() {
   const server = createServer();
   const io = attach(server) as Server;
+  return { server, io };
+}
+
+async function startTestServer() {
+  const { server, io } = createTestServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
   return { server, io };
 }
 
@@ -22,12 +35,24 @@ async function closeTestServer(
   await new Promise<void>((resolve) => server.close(() => resolve()));
 }
 
+const listenProbe = await probeLocalTcpListener();
+if (!listenProbe.ok) {
+  console.warn(
+    `Skipping ws tests requiring local TCP listener: ${listenProbe.reason}`,
+  );
+}
+
+const udid = getUDID();
+const hasUDID = udid !== null;
+if (!hasUDID) {
+  console.warn("Skipping /session test: UDID environment variable not set");
+}
+
 describe("socket.io tests", () => {
-  it(
+  it.skipIf(!listenProbe.ok)(
     "should notify clients on device change",
     async () => {
-      const { server, io } = createTestServer();
-      await new Promise<void>((resolve) => server.listen(() => resolve()));
+      const { server, io } = await startTestServer();
 
       const mgr = frida.getDeviceManager();
       const { port } = server.address() as AddressInfo;
@@ -62,19 +87,12 @@ describe("socket.io tests", () => {
     { timeout: 5000 },
   );
 
-  it(
+  it.skipIf(!listenProbe.ok || !hasUDID)(
     "should run rpc tests",
     async () => {
-      const deviceId = process.env.UDID;
-      if (!deviceId) {
-        console.warn(
-          "Skipping /session test: UDID environment variable not set",
-        );
-        return;
-      }
+      const deviceId = udid as string;
 
-      const { server, io } = createTestServer();
-      await new Promise<void>((resolve) => server.listen(() => resolve()));
+      const { server, io } = await startTestServer();
 
       const { port } = server.address() as AddressInfo;
       const query = new URLSearchParams({

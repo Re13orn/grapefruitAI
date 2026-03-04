@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { List, type RowComponentProps } from "react-window";
 
 export type Stride = 8 | 16 | 32 | 64;
@@ -9,13 +10,14 @@ interface HexViewParams {
 
 export default function HexView({ data, stride }: HexViewParams) {
   const count = Math.ceil(data.byteLength / stride);
+  const rowProps = useMemo(() => ({ data, stride }), [data, stride]);
 
   return (
     <List
       rowComponent={HexRow}
       rowCount={count}
       rowHeight={24}
-      rowProps={{ data, stride }}
+      rowProps={rowProps}
     />
   );
 }

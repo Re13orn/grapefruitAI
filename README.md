@@ -55,6 +55,9 @@ Now it supports both iOS and Android!
 - [Development](docs/dev.md)
 - [Architecture](docs/arch.md)
 - [RPC](docs/rpc.md)
+- [Install / Deploy / Usage (ZH-CN)](docs/install-deploy-usage.zh-CN.md)
+- [AI Skills Pack](skills/README.md)
+- [AI Skills Manifest](skills/index.json)
 
 ## License
 

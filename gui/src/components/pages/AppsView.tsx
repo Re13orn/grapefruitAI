@@ -2,7 +2,7 @@ import { useParams, Link, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { AlertCircleIcon, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -129,13 +129,28 @@ export function AppsView() {
   const loading = infoLoading || appsLoading;
   const error = infoError || appsError;
 
-  const filteredApps = apps.filter((app) => {
+  const keyedApps = useMemo(() => {
+    const seen = new Map<string, number>();
+    return apps.map((app) => {
+      const base = `${app.identifier}:${app.pid}`;
+      const count = (seen.get(base) ?? 0) + 1;
+      seen.set(base, count);
+      return {
+        ...app,
+        rowKey: count === 1 ? base : `${base}:${count}`,
+      };
+    });
+  }, [apps]);
+
+  const filteredApps = useMemo(() => {
     const query = searchQuery.toLowerCase();
-    return (
-      app.name.toLowerCase().includes(query) ||
-      app.identifier.toLowerCase().includes(query)
-    );
-  });
+    return keyedApps.filter((app) => {
+      return (
+        app.name.toLowerCase().includes(query) ||
+        app.identifier.toLowerCase().includes(query)
+      );
+    });
+  }, [keyedApps, searchQuery]);
 
   if (loading) {
     return (
@@ -207,7 +222,7 @@ export function AppsView() {
       <div className="mt-4 grid grid-cols-2 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8 3xl:grid-cols-10">
         {filteredApps.map((app) => (
           <AppCard
-            key={app.identifier}
+            key={app.rowKey}
             app={app}
             udid={udid!}
             platform={platform}

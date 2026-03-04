@@ -8,6 +8,13 @@ export interface BaseMessage {
   extra?: Record<string, unknown>;
 }
 
+let callCounter = 0;
+
+export function nextCallId(prefix = "hook"): string {
+  callCounter += 1;
+  return `${prefix}:${callCounter}`;
+}
+
 export function bt(ctx: CpuContext): string[] {
   return Thread.backtrace(ctx, Backtracer.ACCURATE).map((addr) => {
     const { moduleName, name } = DebugSymbol.fromAddress(addr);

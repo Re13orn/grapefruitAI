@@ -1,7 +1,7 @@
 import ObjC from "frida-objc-bridge";
 
 import { getGlobalExport } from "@/lib/polyfill.js";
-import { BaseMessage, bt } from "./context.js";
+import { BaseMessage, bt, nextCallId } from "./context.js";
 
 export interface NativeHookSignature {
   args: string[];
@@ -83,11 +83,16 @@ export function hook(
   const symbolName = module ? `${module}!${name}` : name;
   const listener = Interceptor.attach(addr, {
     onEnter(args) {
+      const callId = nextCallId("native");
+      this.callId = callId;
       let line = `${name}(`;
       const argParts: string[] = [];
+      const argValues: string[] = [];
       if (sig) {
         for (let i = 0; i < sig.args.length; i++) {
-          argParts.push(`${sig.args[i]}: ${formatArg(args[i], sig.args[i])}`);
+          const value = formatArg(args[i], sig.args[i]);
+          argValues.push(value);
+          argParts.push(`${sig.args[i]}: ${value}`);
         }
       }
       line += argParts.join(", ") + ")";
@@ -99,13 +104,21 @@ export function hook(
         dir: "enter",
         line,
         backtrace: bt(this.context),
-        extra: { module, name },
+        extra: {
+          callId,
+          module,
+          name,
+          args: argValues,
+          signature: sig ? { args: sig.args, returns: sig.returns } : undefined,
+        },
       } satisfies BaseMessage);
     },
     onLeave(retval) {
+      const callId = typeof this.callId === "string" ? this.callId : nextCallId("native");
       let line = `${name}()`;
+      const ret = sig ? formatRetval(retval, sig.returns) : retval.toString();
       if (sig) {
-        line += ` -> ${formatRetval(retval, sig.returns)}`;
+        line += ` -> ${ret}`;
       }
 
       send({
@@ -115,7 +128,13 @@ export function hook(
         dir: "leave",
         line,
         backtrace: bt(this.context),
-        extra: { module, name },
+        extra: {
+          callId,
+          module,
+          name,
+          ret,
+          signature: sig ? { args: sig.args, returns: sig.returns } : undefined,
+        },
       } satisfies BaseMessage);
     },
   });

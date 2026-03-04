@@ -43,6 +43,11 @@ export function ModulesPanel() {
     );
   }, [modules, search]);
 
+  const rowProps = useMemo(
+    () => ({ modules: filteredModules, openFilePanel, isDroid, device, pid }),
+    [filteredModules, openFilePanel, isDroid, device, pid],
+  );
+
   return (
     <div className="h-full flex flex-col">
       <div className="p-4 space-y-4">
@@ -76,7 +81,7 @@ export function ModulesPanel() {
               rowComponent={ModuleRow}
               rowCount={filteredModules.length}
               rowHeight={ITEM_HEIGHT}
-              rowProps={{ modules: filteredModules, openFilePanel, isDroid, device, pid }}
+              rowProps={rowProps}
             />
           </div>
         )}

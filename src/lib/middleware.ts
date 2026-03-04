@@ -1,5 +1,7 @@
 import { createMiddleware } from "hono/factory";
-import frida, { type Device } from "./xvii.ts";
+import { type Device } from "frida";
+
+import { resolveDevice } from "./device.ts";
 
 export const getDeviceMiddleware = createMiddleware<{
   Variables: {
@@ -12,6 +14,11 @@ export const getDeviceMiddleware = createMiddleware<{
     return c.json({ error: "device not found" }, 404);
   }
 
-  c.set("device", await frida.getDevice(deviceId));
+  const device = await resolveDevice(deviceId).catch(() => null);
+  if (!device) {
+    return c.json({ error: "device not found" }, 404);
+  }
+
+  c.set("device", device);
   await next();
 });

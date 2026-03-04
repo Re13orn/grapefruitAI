@@ -4,6 +4,16 @@ import { Readable } from "node:stream";
 import { create as createTransport } from "../lib/transport.ts";
 import { getDeviceMiddleware } from "../lib/middleware.ts";
 
+async function closeTransportQuietly(
+  transport: Awaited<ReturnType<typeof createTransport>>,
+) {
+  try {
+    await transport.close();
+  } catch (e) {
+    console.debug("failed to close transport:", e);
+  }
+}
+
 const routes = new Hono()
   .get("/download/:device/:pid", getDeviceMiddleware, async (c) => {
     const path = c.req.query("path");
@@ -24,6 +34,7 @@ const routes = new Hono()
       size = await script.exports.len(path);
     } catch (e) {
       console.error(e);
+      await closeTransportQuietly(transport);
       return c.text("file not found", 404);
     }
 
@@ -34,18 +45,21 @@ const routes = new Hono()
     );
 
     return stream(c, async (streamer) => {
-      await Promise.all([
-        new Promise<void>((resolve) => {
-          controller.events.on("stream", async (incomingStream: Readable) => {
-            for await (const chunk of incomingStream) {
-              await streamer.write(chunk);
-            }
-            await transport.close();
-            resolve();
-          });
-        }),
-        script.exports.pull(path),
-      ]);
+      try {
+        await Promise.all([
+          new Promise<void>((resolve) => {
+            controller.events.once("stream", async (incomingStream: Readable) => {
+              for await (const chunk of incomingStream) {
+                await streamer.write(chunk);
+              }
+              resolve();
+            });
+          }),
+          script.exports.pull(path),
+        ]);
+      } finally {
+        await closeTransportQuietly(transport);
+      }
     });
   })
   .on(["HEAD", "GET"], "/dump/:device/:pid", getDeviceMiddleware, async (c) => {
@@ -103,7 +117,7 @@ const routes = new Hono()
         // no need to await this, the real resolve happens
         // in the message handler once the process is complete
         script.exports.dump(path).catch(reject);
-      }).finally(() => transport.close());
+      }).finally(() => closeTransportQuietly(transport));
     });
   })
   .post("/upload/:device/:pid", getDeviceMiddleware, async (c) => {
@@ -111,43 +125,45 @@ const routes = new Hono()
     const path = formBody["path"];
     if (typeof path !== "string") return c.text("invalid path", 400);
 
+    const file = formBody["file"];
+    if (!(file instanceof File)) return c.text("invalid request", 400);
+
     const device = c.get("device");
     const pid = parseInt(c.req.param("pid"), 10);
     const transport = await createTransport(device, pid);
     const { script, controller } = transport;
 
-    const file = formBody["file"];
-    if (!(file instanceof File)) return c.text("invalid request", 400);
+    try {
+      // Set up agent recv() handler before sending any stream messages
+      await script.exports.push(path);
 
-    // Set up agent recv() handler before sending any stream messages
-    await script.exports.push(path);
+      await new Promise<void>((resolve, reject) => {
+        const writable = controller.open(`${pid}:${path}`, {
+          meta: { type: "data" },
+        });
 
-    await new Promise<void>((resolve, reject) => {
-      const writable = controller.open(`${pid}:${path}`, {
-        meta: { type: "data" },
+        writable.on("error", reject);
+        writable.on("finish", () => resolve());
+
+        const reader = file.stream().getReader();
+        const pump = () => {
+          reader.read().then(({ done, value }) => {
+            if (done) {
+              writable.end();
+              return;
+            }
+            if (!writable.write(value)) {
+              writable.once("drain", pump);
+            } else {
+              pump();
+            }
+          }, reject);
+        };
+        pump();
       });
-
-      writable.on("error", reject);
-      writable.on("finish", () => resolve());
-
-      const reader = file.stream().getReader();
-      const pump = () => {
-        reader.read().then(({ done, value }) => {
-          if (done) {
-            writable.end();
-            return;
-          }
-          if (!writable.write(value)) {
-            writable.once("drain", pump);
-          } else {
-            pump();
-          }
-        }, reject);
-      };
-      pump();
-    });
-
-    await transport.close();
+    } finally {
+      await closeTransportQuietly(transport);
+    }
 
     return c.text("upload complete");
   });

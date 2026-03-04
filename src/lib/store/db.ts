@@ -12,7 +12,7 @@ const migrationsFolder = await asset("drizzle");
 export const db: BaseSQLiteDatabase<"sync", any, typeof schema> =
   await (async () => {
     if (typeof globalThis.Bun === "undefined") {
-      const { default: Database } = (await import("better-sqlite3")) as any;
+      const { default: Database } = await import("better-sqlite3");
       const { drizzle } = await import("drizzle-orm/better-sqlite3");
       const { migrate } = await import("drizzle-orm/better-sqlite3/migrator");
       const db = drizzle(new Database(dbPath), { schema });

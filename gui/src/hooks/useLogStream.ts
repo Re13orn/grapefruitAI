@@ -45,6 +45,16 @@ export function useLogStream<TEntry extends { id: number }>(
   const idRef = useRef(1);
   const pendingRef = useRef<TEntry[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fromRecordRef = useRef(fromRecord);
+  const fromEventRef = useRef(fromEvent);
+
+  useEffect(() => {
+    fromRecordRef.current = fromRecord;
+  }, [fromRecord]);
+
+  useEffect(() => {
+    fromEventRef.current = fromEvent;
+  }, [fromEvent]);
 
   // Load history
   const { data: history } = useQuery<Record<string, unknown[]>>({
@@ -74,10 +84,12 @@ export function useLogStream<TEntry extends { id: number }>(
 
     const next: TEntry[] = [];
     for (const record of [...records].reverse()) {
-      next.push(fromRecord(record as Record<string, unknown>, idRef.current++));
+      next.push(
+        fromRecordRef.current(record as Record<string, unknown>, idRef.current++),
+      );
     }
     setEntries(next);
-  }, [history, key, fromRecord]);
+  }, [history, key]);
 
   // Flush pending entries
   const flushPending = useCallback(() => {
@@ -98,7 +110,7 @@ export function useLogStream<TEntry extends { id: number }>(
     if (status !== Status.Ready || !socket || !enabled) return;
 
     const handler = (...args: unknown[]) => {
-      const entry = fromEvent(idRef.current++, ...args);
+      const entry = fromEventRef.current(idRef.current++, ...args);
       if (entry) {
         pendingRef.current.push(entry);
         if (!timerRef.current) {
@@ -118,7 +130,7 @@ export function useLogStream<TEntry extends { id: number }>(
         timerRef.current = null;
       }
     };
-  }, [status, socket, event, fromEvent, flushPending, throttle, enabled]);
+  }, [status, socket, event, flushPending, throttle, enabled]);
 
   // Clear mutation
   const clearMutation = useMutation({

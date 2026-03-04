@@ -26,6 +26,11 @@ export function DroidClassesPanel() {
     return classes.filter((c) => c.toLowerCase().includes(query));
   }, [classes, search]);
 
+  const rowProps = useMemo(
+    () => ({ classes: filteredClasses, openFilePanel }),
+    [filteredClasses, openFilePanel],
+  );
+
   return (
     <div className="h-full flex flex-col">
       <div className="p-3 space-y-3 border-b border-border/50">
@@ -62,7 +67,7 @@ export function DroidClassesPanel() {
             rowComponent={ClassRow}
             rowCount={filteredClasses.length}
             rowHeight={ITEM_HEIGHT}
-            rowProps={{ classes: filteredClasses, openFilePanel }}
+            rowProps={rowProps}
           />
         )}
       </div>

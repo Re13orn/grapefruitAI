@@ -285,6 +285,14 @@ export function DroidKeystoreTab() {
   }, [keys, search]);
 
   const selectedEntry = keys.find((k) => k.alias === selected);
+  const rowProps = useMemo(
+    () => ({
+      items: filtered,
+      selected,
+      onClick: setSelected,
+    }),
+    [filtered, selected],
+  );
 
   const listPane = (
     <div className="h-full flex flex-col">
@@ -318,11 +326,7 @@ export function DroidKeystoreTab() {
               rowComponent={AliasRow}
               rowCount={filtered.length}
               rowHeight={ITEM_HEIGHT}
-              rowProps={{
-                items: filtered,
-                selected,
-                onClick: setSelected,
-              }}
+              rowProps={rowProps}
             />
           </div>
         )}

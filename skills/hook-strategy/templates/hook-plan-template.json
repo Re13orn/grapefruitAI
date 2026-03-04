@@ -1,0 +1,46 @@
+{
+  "target": {
+    "deviceId": "emulator-5554",
+    "identifier": "com.example.app",
+    "platform": "droid",
+    "focus": "crypto"
+  },
+  "scripts": [
+    {
+      "name": "crypto-core",
+      "content": "// Frida script here",
+      "enabled": true,
+      "runOnAppLaunch": true
+    },
+    {
+      "name": "storage-sharedpref",
+      "content": "// Frida script here",
+      "enabled": true,
+      "runOnAppLaunch": true
+    }
+  ],
+  "preset": {
+    "name": "crypto-startup-default",
+    "autoApplyOnAppLaunch": true,
+    "items": [
+      {
+        "scriptName": "crypto-core",
+        "enabled": true,
+        "runOnAppLaunch": true
+      },
+      {
+        "scriptName": "storage-sharedpref",
+        "enabled": true,
+        "runOnAppLaunch": true
+      }
+    ]
+  },
+  "validation": {
+    "restartApp": true,
+    "waitMs": 3500,
+    "expectSignals": [
+      "Cipher.init",
+      "Cipher.doFinal"
+    ]
+  }
+}

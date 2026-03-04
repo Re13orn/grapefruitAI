@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback } from "react";
 import { useR2, type Platform, type Architecture } from "@frida/react-use-r2";
-import { useSession } from "@/context/SessionContext";
+import { Platform as SessionPlatform, useSession } from "@/context/SessionContext";
 import { useFruityQuery } from "@/lib/queries";
 
 interface ProcessInfo {
@@ -30,6 +30,16 @@ function mapArch(arch: string): Architecture {
 }
 
 export function R2Provider({ children }: { children: ReactNode }) {
+  const { platform } = useSession();
+
+  if (platform !== SessionPlatform.Fruity) {
+    return <>{children}</>;
+  }
+
+  return <FruityR2Provider>{children}</FruityR2Provider>;
+}
+
+function FruityR2Provider({ children }: { children: ReactNode }) {
   const { fruity } = useSession();
 
   const { data: processInfo } = useFruityQuery<ProcessInfo>(

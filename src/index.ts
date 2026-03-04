@@ -42,13 +42,29 @@ const server = serve(
   },
 );
 
-for (const sig of ["SIGINT", "SIGTERM", "SIGBEAK"]) {
-  process.on(sig, () => {
-    console.log("received signal", sig);
-    server.close();
+const shutdownSignals: NodeJS.Signals[] = [
+  "SIGINT",
+  "SIGTERM",
+  ...(process.platform === "win32" ? (["SIGBREAK"] as const) : []),
+];
+let shuttingDown = false;
 
-    // force close
-    process.exit();
+for (const sig of shutdownSignals) {
+  process.on(sig, () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+
+    console.log("received signal", sig);
+    const forceExitTimer = setTimeout(() => {
+      console.warn("force exiting after graceful shutdown timeout");
+      process.exit(1);
+    }, 5_000);
+    forceExitTimer.unref();
+
+    server.close(() => {
+      clearTimeout(forceExitTimer);
+      process.exit(0);
+    });
   });
 }
 

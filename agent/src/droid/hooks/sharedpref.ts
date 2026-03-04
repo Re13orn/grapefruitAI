@@ -1,6 +1,6 @@
 import Java from "frida-java-bridge";
 
-import type { BaseMessage } from "@/common/hooks/context.js";
+import { type BaseMessage, nextCallId } from "@/common/hooks/context.js";
 import { patch as createPatch, backtrace } from "@/common/hooks/java.js";
 
 const restores: Array<() => void> = [];
@@ -41,6 +41,7 @@ function hookGetSharedPreferences() {
     ContextWrapper.getSharedPreferences.overload("java.lang.String", "int"),
     (original, self, args) => {
       const [name, mode] = args as [Java.Wrapper, number];
+      const callId = nextCallId("sharedpref");
       const prefName = name?.toString() ?? "<null>";
 
       send({
@@ -50,7 +51,7 @@ function hookGetSharedPreferences() {
         dir: "enter",
         line: `getSharedPreferences("${prefName}", ${mode})`,
         backtrace: backtrace(),
-        extra: { op: "open", name: prefName, mode },
+        extra: { callId, op: "open", name: prefName, mode },
       } satisfies BaseMessage);
 
       return original.call(self, name, mode);
@@ -75,6 +76,7 @@ function hookSharedPreferencesRead() {
         SharedPreferencesImpl[name].overload("java.lang.String", argType),
         (original, self, args) => {
           const [key, defValue] = args as [Java.Wrapper, unknown];
+          const callId = nextCallId("sharedpref");
           const keyStr = key?.toString() ?? "<null>";
           const ret = original.call(self, key, defValue);
 
@@ -87,6 +89,7 @@ function hookSharedPreferencesRead() {
             backtrace: backtrace(),
             extra: {
               op: "read",
+              callId,
               method: name,
               key: keyStr,
               value: ret?.toString() ?? null,
@@ -106,6 +109,7 @@ function hookSharedPreferencesRead() {
       SharedPreferencesImpl.getStringSet.overload("java.lang.String", "java.util.Set"),
       (original, self, args) => {
         const [key, defValue] = args as [Java.Wrapper, Java.Wrapper | null];
+        const callId = nextCallId("sharedpref");
         const keyStr = key?.toString() ?? "<null>";
         const ret = original.call(self, key, defValue);
 
@@ -116,7 +120,13 @@ function hookSharedPreferencesRead() {
           dir: "leave",
           line: `getStringSet("${keyStr}")`,
           backtrace: backtrace(),
-          extra: { op: "read", method: "getStringSet", key: keyStr, valueType: "stringSet" },
+          extra: {
+            callId,
+            op: "read",
+            method: "getStringSet",
+            key: keyStr,
+            valueType: "stringSet",
+          },
         } satisfies BaseMessage);
 
         return ret;
@@ -129,6 +139,7 @@ function hookSharedPreferencesRead() {
     patch(
       SharedPreferencesImpl.getAll,
       (original, self, args) => {
+        const callId = nextCallId("sharedpref");
         const ret = original.call(self, ...args);
 
         send({
@@ -138,7 +149,7 @@ function hookSharedPreferencesRead() {
           dir: "leave",
           line: "getAll()",
           backtrace: backtrace(),
-          extra: { op: "read", method: "getAll" },
+          extra: { callId, op: "read", method: "getAll" },
         } satisfies BaseMessage);
 
         return ret;
@@ -152,6 +163,7 @@ function hookSharedPreferencesRead() {
       SharedPreferencesImpl.contains.overload("java.lang.String"),
       (original, self, args) => {
         const [key] = args as [Java.Wrapper];
+        const callId = nextCallId("sharedpref");
         const keyStr = key?.toString() ?? "<null>";
         const ret = original.call(self, key);
 
@@ -162,7 +174,7 @@ function hookSharedPreferencesRead() {
           dir: "leave",
           line: `contains("${keyStr}") => ${ret}`,
           backtrace: backtrace(),
-          extra: { op: "query", method: "contains", key: keyStr, result: ret },
+          extra: { callId, op: "query", method: "contains", key: keyStr, result: ret },
         } satisfies BaseMessage);
 
         return ret;
@@ -188,6 +200,7 @@ function hookSharedPreferencesWrite() {
         EditorImpl[name].overload("java.lang.String", argType),
         (original, self, args) => {
           const [key, value] = args as [Java.Wrapper, unknown];
+          const callId = nextCallId("sharedpref");
           const keyStr = key?.toString() ?? "<null>";
           const valStr = value?.toString() ?? "null";
 
@@ -198,7 +211,14 @@ function hookSharedPreferencesWrite() {
             dir: "enter",
             line: `${name}("${keyStr}", ${valStr})`,
             backtrace: backtrace(),
-            extra: { op: "write", method: name, key: keyStr, value: valStr, valueType },
+            extra: {
+              callId,
+              op: "write",
+              method: name,
+              key: keyStr,
+              value: valStr,
+              valueType,
+            },
           } satisfies BaseMessage);
 
           return original.call(self, key, value);
@@ -213,6 +233,7 @@ function hookSharedPreferencesWrite() {
       EditorImpl.putStringSet.overload("java.lang.String", "java.util.Set"),
       (original, self, args) => {
         const [key, values] = args as [Java.Wrapper, Java.Wrapper | null];
+        const callId = nextCallId("sharedpref");
         const keyStr = key?.toString() ?? "<null>";
 
         send({
@@ -222,7 +243,13 @@ function hookSharedPreferencesWrite() {
           dir: "enter",
           line: `putStringSet("${keyStr}", ...)`,
           backtrace: backtrace(),
-          extra: { op: "write", method: "putStringSet", key: keyStr, valueType: "stringSet" },
+          extra: {
+            callId,
+            op: "write",
+            method: "putStringSet",
+            key: keyStr,
+            valueType: "stringSet",
+          },
         } satisfies BaseMessage);
 
         return original.call(self, key, values);
@@ -236,6 +263,7 @@ function hookSharedPreferencesWrite() {
       EditorImpl.remove.overload("java.lang.String"),
       (original, self, args) => {
         const [key] = args as [Java.Wrapper];
+        const callId = nextCallId("sharedpref");
         const keyStr = key?.toString() ?? "<null>";
 
         send({
@@ -245,7 +273,7 @@ function hookSharedPreferencesWrite() {
           dir: "enter",
           line: `remove("${keyStr}")`,
           backtrace: backtrace(),
-          extra: { op: "delete", method: "remove", key: keyStr },
+          extra: { callId, op: "delete", method: "remove", key: keyStr },
         } satisfies BaseMessage);
 
         return original.call(self, key);
@@ -258,6 +286,7 @@ function hookSharedPreferencesWrite() {
     patch(
       EditorImpl.clear,
       (original, self, args) => {
+        const callId = nextCallId("sharedpref");
         send({
           subject: "hook",
           category: "sharedpref",
@@ -265,7 +294,7 @@ function hookSharedPreferencesWrite() {
           dir: "enter",
           line: "clear()",
           backtrace: backtrace(),
-          extra: { op: "delete", method: "clear" },
+          extra: { callId, op: "delete", method: "clear" },
         } satisfies BaseMessage);
 
         return original.call(self, ...args);
@@ -278,6 +307,7 @@ function hookSharedPreferencesWrite() {
     patch(
       EditorImpl.commit,
       (original, self, args) => {
+        const callId = nextCallId("sharedpref");
         send({
           subject: "hook",
           category: "sharedpref",
@@ -285,7 +315,7 @@ function hookSharedPreferencesWrite() {
           dir: "enter",
           line: "commit() // sync write",
           backtrace: backtrace(),
-          extra: { op: "commit", method: "commit", sync: true },
+          extra: { callId, op: "commit", method: "commit", sync: true },
         } satisfies BaseMessage);
 
         return original.call(self, ...args);
@@ -298,6 +328,7 @@ function hookSharedPreferencesWrite() {
     patch(
       EditorImpl.apply,
       (original, self, args) => {
+        const callId = nextCallId("sharedpref");
         send({
           subject: "hook",
           category: "sharedpref",
@@ -305,7 +336,7 @@ function hookSharedPreferencesWrite() {
           dir: "enter",
           line: "apply() // async write",
           backtrace: backtrace(),
-          extra: { op: "commit", method: "apply", sync: false },
+          extra: { callId, op: "commit", method: "apply", sync: false },
         } satisfies BaseMessage);
 
         return original.call(self, ...args);

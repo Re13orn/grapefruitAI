@@ -106,7 +106,7 @@ export function DroidComponentsPanel() {
         ? servicesLoading
         : receiversLoading;
 
-  const handleAction = async (name: string) => {
+  const handleAction = useCallback(async (name: string) => {
     try {
       if (activeTab === "activities") {
         await startActivityMutation.mutateAsync({ component: name });
@@ -121,16 +121,32 @@ export function DroidComponentsPanel() {
     } catch (err) {
       toast.error((err as Error).message);
     }
-  };
+  }, [
+    activeTab,
+    startActivityMutation,
+    startServiceMutation,
+    sendBroadcastMutation,
+    t,
+  ]);
 
-  const handleStopService = async (name: string) => {
+  const handleStopService = useCallback(async (name: string) => {
     try {
       await stopServiceMutation.mutateAsync({ component: name });
       toast.success(t("stop_service"));
     } catch (err) {
       toast.error((err as Error).message);
     }
-  };
+  }, [stopServiceMutation, t]);
+
+  const rowProps = useMemo(
+    () => ({
+      items: currentItems,
+      activeTab,
+      onAction: handleAction,
+      onStopService: handleStopService,
+    }),
+    [currentItems, activeTab, handleAction, handleStopService],
+  );
 
   return (
     <div className="h-full flex flex-col">
@@ -177,13 +193,7 @@ export function DroidComponentsPanel() {
               rowComponent={ComponentRow}
               rowCount={currentItems.length}
               rowHeight={ITEM_HEIGHT}
-              rowProps={{
-                items: currentItems,
-                activeTab,
-                onAction: handleAction,
-                onStopService: handleStopService,
-                t,
-              }}
+              rowProps={rowProps}
             />
           </div>
         )}
@@ -198,14 +208,13 @@ function ComponentRow({
   items,
   activeTab,
   onAction,
-  t,
 }: RowComponentProps<{
   items: ComponentEntry[];
   activeTab: string;
   onAction: (name: string) => void;
   onStopService: (name: string) => void;
-  t: (key: string) => string;
 }>) {
+  const { t } = useTranslation();
   const item = items[index];
 
   return (

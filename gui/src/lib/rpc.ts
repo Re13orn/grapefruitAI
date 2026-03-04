@@ -118,9 +118,13 @@ export interface MemoryScanEvent {
 export interface SessionClientEvents {
   ready: (pid: number) => void;
   denied: () => void;
+  detached: (reason: string) => void;
   log: (level: string, text: string) => void;
   syslog: (text: string) => void;
   invalid: () => void;
+  lifecycle: (
+    event: "inactive" | "active" | "forerground" | "background",
+  ) => void;
   hook: (message: BaseHookMessage) => void;
   flutter: (event: Record<string, unknown>) => void;
   crypto: (message: BaseHookMessage) => void;
@@ -166,20 +170,27 @@ export type CommonRPC = Pick<
 
 type Platform = "fruity" | "droid";
 
+type ReadyAwareSocket = Socket<SessionClientEvents, SessionServerEvents> & {
+  __igfReady?: boolean;
+};
+
 function createExecutor(
   socket: Socket<SessionClientEvents, SessionServerEvents>,
 ) {
-  let ready = false;
+  const readyAwareSocket = socket as ReadyAwareSocket;
+  let ready = readyAwareSocket.__igfReady === true;
   const pending: Array<{ run: () => void; reject: (err: Error) => void }> = [];
 
   socket.on("ready", () => {
     ready = true;
+    readyAwareSocket.__igfReady = true;
     pending.forEach((operation) => operation.run());
     pending.length = 0;
   });
 
   socket.on("disconnect", () => {
     ready = false;
+    readyAwareSocket.__igfReady = false;
     const err = new Error("socket disconnected");
     pending.forEach((operation) => operation.reject(err));
     pending.length = 0;

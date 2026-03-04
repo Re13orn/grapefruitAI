@@ -292,6 +292,9 @@ export function FruityNSURLTab() {
     () => new Map(),
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<"request" | "response" | "messages">(
+    "request",
+  );
   const tableEndRef = useRef<HTMLDivElement>(null);
   const pendingRef = useRef<NSURLEvent[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -415,6 +418,20 @@ export function FruityNSURLTab() {
 
   const requestList = Array.from(requests.values());
   const selectedRequest = selectedId ? requests.get(selectedId) : null;
+
+  useEffect(() => {
+    if (!selectedRequest) {
+      setDetailTab("request");
+      return;
+    }
+
+    setDetailTab((current) => {
+      if (current === "messages" && !selectedRequest.isWebSocket) {
+        return "request";
+      }
+      return current;
+    });
+  }, [selectedRequest]);
 
   return (
     <div className="flex flex-col h-full">
@@ -549,7 +566,13 @@ export function FruityNSURLTab() {
           <>
             <ResizableHandle />
             <ResizablePanel defaultSize="50%" minSize="20%">
-              <Tabs defaultValue="request" className="h-full flex flex-col">
+              <Tabs
+                value={detailTab}
+                onValueChange={(value) =>
+                  setDetailTab(value as "request" | "response" | "messages")
+                }
+                className="h-full flex flex-col"
+              >
                 <TabsList variant="line" className="mx-2 mt-2">
                   <TabsTrigger value="request">Request</TabsTrigger>
                   <TabsTrigger value="response">Response</TabsTrigger>

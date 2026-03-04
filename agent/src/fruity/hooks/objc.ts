@@ -1,6 +1,6 @@
 import ObjC from "frida-objc-bridge";
 
-import { BaseMessage, bt } from "@/common/hooks/context.js";
+import { BaseMessage, bt, nextCallId } from "@/common/hooks/context.js";
 
 const hooked = new Map<string, Map<string, InvocationListener>>();
 
@@ -44,6 +44,8 @@ export function swizzle(klassName: string, sel: string) {
 
   const listener = Interceptor.attach(method.implementation, {
     onEnter(args) {
+      const callId = nextCallId("objc");
+      this.callId = callId;
       const formatted = argIsObj.map((obj, i) => format(obj, args[i + 2]));
       const argsStr = formatted.length > 0 ? formatted.join(", ") : "";
 
@@ -54,10 +56,11 @@ export function swizzle(klassName: string, sel: string) {
         dir: "enter",
         line: `[${klassName} ${sel}](${argsStr})`,
         backtrace: bt(this.context),
-        extra: { cls: klassName, sel, args: formatted },
+        extra: { callId, cls: klassName, sel, args: formatted },
       } satisfies BaseMessage);
     },
     onLeave(retval) {
+      const callId = typeof this.callId === "string" ? this.callId : nextCallId("objc");
       const retStr = format(retIsObj, retval);
       send({
         subject: "hook",
@@ -66,7 +69,7 @@ export function swizzle(klassName: string, sel: string) {
         dir: "leave",
         line: `[${klassName} ${sel}] → ${retStr}`,
         backtrace: bt(this.context),
-        extra: { cls: klassName, sel, ret: retStr },
+        extra: { callId, cls: klassName, sel, ret: retStr },
       } satisfies BaseMessage);
     },
   });

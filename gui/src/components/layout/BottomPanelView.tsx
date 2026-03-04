@@ -7,6 +7,7 @@ import {
   Anchor,
   Terminal,
   Lock,
+  History,
 } from "lucide-react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,6 +16,7 @@ import { Status, Platform, useSession } from "@/context/SessionContext";
 import { LogPanel, type LogViewerHandle } from "../shared/LogPanel";
 import { HookResultsView } from "../shared/HookResultsView";
 import { CryptoResultsView } from "../shared/CryptoResultsView";
+import { TimelineSessionView } from "../shared/TimelineSessionView";
 import { CodeScratchPadTab } from "../tabs/CodeScratchPadTab";
 
 const BOTTOM_PANEL_TAB_STATE = "BOTTOM_PANEL_TAB_STATE";
@@ -149,6 +151,13 @@ export function BottomPanelView() {
           {t("crypto_results")}
         </TabsTrigger>
         <TabsTrigger
+          value="timeline"
+          className="rounded-none border-b-2 border-transparent data-active:border-primary flex items-center gap-2"
+        >
+          <History className="h-4 w-4" />
+          {t("timeline_tab")}
+        </TabsTrigger>
+        <TabsTrigger
           value="agent-logs"
           className="rounded-none border-b-2 border-transparent data-active:border-primary flex items-center gap-2"
         >
@@ -178,18 +187,20 @@ export function BottomPanelView() {
       <TabsContent
         value="hooks"
         className="flex-1 overflow-hidden mt-0"
-        keepMounted
-        hidden={activeTab !== "hooks"}
       >
-        <HookResultsView />
+        {activeTab === "hooks" ? <HookResultsView /> : null}
       </TabsContent>
       <TabsContent
         value="crypto"
         className="flex-1 overflow-hidden mt-0"
-        keepMounted
-        hidden={activeTab !== "crypto"}
       >
-        <CryptoResultsView />
+        {activeTab === "crypto" ? <CryptoResultsView /> : null}
+      </TabsContent>
+      <TabsContent
+        value="timeline"
+        className="flex-1 overflow-hidden mt-0"
+      >
+        {activeTab === "timeline" ? <TimelineSessionView /> : null}
       </TabsContent>
       <TabsContent
         value="agent-logs"
@@ -209,7 +220,7 @@ export function BottomPanelView() {
         keepMounted
         hidden={activeTab !== "repl"}
       >
-        <CodeScratchPadTab />
+        {activeTab === "repl" ? <CodeScratchPadTab /> : null}
       </TabsContent>
     </Tabs>
   );

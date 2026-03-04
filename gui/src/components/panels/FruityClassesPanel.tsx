@@ -34,6 +34,11 @@ export function FruityClassesPanel() {
     return classes.filter((c) => c.toLowerCase().includes(query));
   }, [classes, search]);
 
+  const rowProps = useMemo(
+    () => ({ classes: filteredClasses, openFilePanel }),
+    [filteredClasses, openFilePanel],
+  );
+
   const handleScopeChange = (value: string) => {
     if (value) setScope(value as ScopeType);
   };
@@ -90,7 +95,7 @@ export function FruityClassesPanel() {
             rowComponent={ClassRow}
             rowCount={filteredClasses.length}
             rowHeight={ITEM_HEIGHT}
-            rowProps={{ classes: filteredClasses, openFilePanel }}
+            rowProps={rowProps}
           />
         )}
       </div>

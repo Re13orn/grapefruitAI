@@ -283,6 +283,7 @@ export function FruityXPCTab() {
 
   const [xpcEntries, setXpcEntries] = useState<XPCEntry[]>([]);
   const [nsxpcEntries, setNsxpcEntries] = useState<NSXPCEntry[]>([]);
+  const [activeTab, setActiveTab] = useState<"xpc" | "nsxpc">("xpc");
   const [selectedXpcId, setSelectedXpcId] = useState<number | null>(null);
   const [selectedNsxpcId, setSelectedNsxpcId] = useState<number | null>(null);
   const [searchFilter, setSearchFilter] = useState("");
@@ -559,7 +560,11 @@ export function FruityXPCTab() {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="xpc" className="flex-1 flex flex-col min-h-0">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as "xpc" | "nsxpc")}
+        className="flex-1 flex flex-col min-h-0"
+      >
         <TabsList variant="line" className="mx-2 mt-1">
           <TabsTrigger value="xpc">XPC ({filteredXpc.length})</TabsTrigger>
           <TabsTrigger value="nsxpc">NSXPC ({filteredNsxpc.length})</TabsTrigger>

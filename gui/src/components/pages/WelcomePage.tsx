@@ -5,6 +5,7 @@ import logo from "../../assets/logo.svg";
 import { Devices } from "./Devices";
 import { DarkmodeToggle } from "../shared/DarkmodeToggle";
 import { LanguageSelector } from "../shared/LanguageSelector";
+import { McpControl } from "../shared/McpControl";
 
 export function WelcomePage() {
   const { t } = useTranslation();
@@ -22,6 +23,7 @@ export function WelcomePage() {
         </div>
         <footer className="mt-auto flex items-center gap-2 pt-4">
           <LanguageSelector />
+          <McpControl />
           <DarkmodeToggle />
         </footer>
       </div>

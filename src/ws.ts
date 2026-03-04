@@ -23,7 +23,8 @@ export default function attach(server: ServerType) {
     if (params) {
       connect(socket, params).catch((ex) => {
         console.error("failed to establish session, ", ex);
-        socket.disconnect(true);
+        socket.emit("fatal", ex instanceof Error ? ex.message : String(ex));
+        setTimeout(() => socket.disconnect(true), 100);
       });
     } else {
       console.error("invalid params:", socket.handshake.query);

@@ -1,4 +1,5 @@
 import * as checksec from "./modules/checksec.js";
+import * as automation from "./modules/automation.js";
 import * as classdump from "./modules/classdump.js";
 import * as cookies from "./modules/cookies.js";
 import * as crypto from "./crypto/index.js";
@@ -34,6 +35,7 @@ if (!Process.findModuleByName("UIKit")) {
 }
 
 export default {
+  automation,
   checksec,
   classdump,
   cookies,

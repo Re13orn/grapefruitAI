@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { t } from "i18next";
 import { StatusBar } from "./StatusBar";
 
@@ -66,12 +66,44 @@ import { XCPrivacyTab } from "../tabs/XCPrivacyTab";
 import { NoCloseTabHeader } from "../tabs/NoCloseTabHeader";
 
 import { DockContext, useDockActions } from "@/context/DockContext";
+import { TimelineSessionProvider } from "@/context/TimelineSessionContext";
 import { R2Provider } from "../providers/R2Provider";
 
 const themeApp: DockviewTheme = {
   name: "app",
   className: "dockview-theme-app",
 };
+
+class PanelErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; message: string | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, message: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, message: error.message };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error("panel render failed:", error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="h-full overflow-auto p-4 text-sm text-muted-foreground">
+          <div className="font-medium text-foreground">Panel crashed</div>
+          <div className="mt-2 break-all">{this.state.message}</div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 function WorkspaceContent() {
   const { bundle, device, mode, pid } = useSession();
@@ -287,7 +319,9 @@ function WorkspaceContent() {
                   setBottomPanelVisible(size.asPercentage > 0);
                 }}
               >
-                <BottomPanelView />
+                <PanelErrorBoundary>
+                  <BottomPanelView />
+                </PanelErrorBoundary>
               </ResizablePanel>
             </ResizablePanelGroup>
           </ResizablePanel>
@@ -308,7 +342,9 @@ export function Workspace() {
   return (
     <SessionProvider>
       <R2Provider>
-        <WorkspaceContent />
+        <TimelineSessionProvider>
+          <WorkspaceContent />
+        </TimelineSessionProvider>
       </R2Provider>
     </SessionProvider>
   );

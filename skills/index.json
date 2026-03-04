@@ -1,0 +1,74 @@
+{
+  "name": "grapefruit-skills-pack",
+  "version": "0.1.0",
+  "schemaVersion": 1,
+  "skills": [
+    {
+      "id": "hook-strategy",
+      "title": "Hook Strategy",
+      "description": "Generate and apply hook script plans and startup presets for one target app.",
+      "skillPath": "skills/hook-strategy/SKILL.md",
+      "templates": [
+        "skills/hook-strategy/templates/hook-plan-template.json"
+      ],
+      "requiredMcpTools": [
+        "list_hook_scripts",
+        "create_hook_script",
+        "update_hook_script",
+        "list_hook_script_presets",
+        "create_hook_script_preset",
+        "apply_hook_script_preset",
+        "launch_app",
+        "wait_for",
+        "get_history",
+        "get_logs"
+      ]
+    },
+    {
+      "id": "scenario-dsl",
+      "title": "Scenario DSL Builder",
+      "description": "Generate or repair Grapefruit scenario DSL payloads and validate run stability.",
+      "skillPath": "skills/scenario-dsl/SKILL.md",
+      "templates": [
+        "skills/scenario-dsl/templates/scenario-template.json"
+      ],
+      "requiredMcpTools": [
+        "create_test_scenario",
+        "update_test_scenario",
+        "run_test_scenario",
+        "list_test_runs",
+        "get_history",
+        "get_logs"
+      ]
+    },
+    {
+      "id": "timeline-triage",
+      "title": "Timeline Triage",
+      "description": "Classify and prioritize security events from captured history and logs.",
+      "skillPath": "skills/timeline-triage/SKILL.md",
+      "templates": [
+        "skills/timeline-triage/templates/triage-output-template.json"
+      ],
+      "requiredMcpTools": [
+        "get_history",
+        "get_logs",
+        "list_test_runs"
+      ]
+    },
+    {
+      "id": "report-generator",
+      "title": "Test Report Generator",
+      "description": "Produce markdown and machine-readable test reports from run and triage results.",
+      "skillPath": "skills/report-generator/SKILL.md",
+      "templates": [
+        "skills/report-generator/templates/report-template.md",
+        "skills/report-generator/templates/report-template.json"
+      ],
+      "requiredMcpTools": [
+        "list_test_runs",
+        "get_history",
+        "get_logs"
+      ]
+    }
+  ]
+}

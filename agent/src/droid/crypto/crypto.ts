@@ -28,6 +28,35 @@ function toBuffer(byteArr: any): ArrayBuffer | null {
   return buf;
 }
 
+function toBufferSlice(
+  byteArr: any,
+  offset: number,
+  length: number,
+): ArrayBuffer | null {
+  if (!byteArr) return null;
+  const total = Number(byteArr.length) || 0;
+  const start = Math.max(0, Math.min(total, Number(offset) || 0));
+  const wanted = Math.max(0, Number(length) || 0);
+  const safeLength = Math.max(0, Math.min(total - start, wanted));
+  const buf = new ArrayBuffer(safeLength);
+  const u8 = new Uint8Array(buf);
+  for (let i = 0; i < safeLength; i++) u8[i] = byteArr[start + i] & 0xff;
+  return buf;
+}
+
+let cryptoCallSeq = 1;
+function nextCallId(symbol: string): string {
+  const id = cryptoCallSeq;
+  cryptoCallSeq += 1;
+  return `${symbol}#${id}`;
+}
+
+interface CipherArgInspection {
+  extra: Record<string, unknown>;
+  payload: ArrayBuffer | null;
+  payloadType: string | null;
+}
+
 function javaHook(
   cls: any,
   method: string,
@@ -48,6 +77,114 @@ export function cipher() {
 
   Java.perform(() => {
     const Cipher = Java.use("javax.crypto.Cipher");
+    const IvParameterSpec = Java.use("javax.crypto.spec.IvParameterSpec");
+    const PBEParameterSpec = Java.use("javax.crypto.spec.PBEParameterSpec");
+    const GCMParameterSpec = (() => {
+      try {
+        return Java.use("javax.crypto.spec.GCMParameterSpec");
+      } catch (_) {
+        return null;
+      }
+    })();
+
+    const inspectKey = (key: any): CipherArgInspection => {
+      const extra: Record<string, unknown> = {
+        keyClass: key?.$className ?? "(unknown)",
+      };
+
+      let payload: ArrayBuffer | null = null;
+      let payloadType: string | null = null;
+
+      try {
+        extra.keyAlgorithm = String(key.getAlgorithm());
+      } catch (_) {
+        /* ignore */
+      }
+
+      try {
+        const fmt = key.getFormat();
+        extra.keyFormat = fmt === null ? "(null)" : String(fmt);
+      } catch (_) {
+        /* ignore */
+      }
+
+      try {
+        const encoded = key.getEncoded();
+        const encodedBuf = toBuffer(encoded);
+        if (encodedBuf) {
+          extra.keyLength = encodedBuf.byteLength;
+          extra.keyMaterialCaptured = true;
+          payload = encodedBuf;
+          payloadType = "key";
+        } else {
+          extra.keyMaterialCaptured = false;
+        }
+      } catch (_) {
+        extra.keyMaterialCaptured = false;
+      }
+
+      return { extra, payload, payloadType };
+    };
+
+    const inspectSpec = (spec: any): CipherArgInspection => {
+      const extra: Record<string, unknown> = {
+        specClass: spec?.$className ?? "(unknown)",
+      };
+
+      let payload: ArrayBuffer | null = null;
+      let payloadType: string | null = null;
+
+      try {
+        const cls = String(spec?.$className ?? "");
+        if (cls === "javax.crypto.spec.IvParameterSpec") {
+          const casted = Java.cast(spec, IvParameterSpec);
+          const iv = casted.getIV();
+          const ivBuf = toBuffer(iv);
+          extra.specType = "iv";
+          extra.ivLength = Number(iv?.length ?? 0);
+          if (ivBuf) {
+            payload = ivBuf;
+            payloadType = "iv";
+          }
+        } else if (
+          cls === "javax.crypto.spec.GCMParameterSpec" &&
+          GCMParameterSpec !== null
+        ) {
+          const casted = Java.cast(spec, GCMParameterSpec);
+          const iv = casted.getIV();
+          const ivBuf = toBuffer(iv);
+          extra.specType = "gcm";
+          extra.ivLength = Number(iv?.length ?? 0);
+          extra.tagLength = Number(casted.getTLen());
+          if (ivBuf) {
+            payload = ivBuf;
+            payloadType = "iv";
+          }
+        } else if (cls === "javax.crypto.spec.PBEParameterSpec") {
+          const casted = Java.cast(spec, PBEParameterSpec);
+          const salt = casted.getSalt();
+          const saltBuf = toBuffer(salt);
+          extra.specType = "pbe";
+          extra.iterations = Number(casted.getIterationCount());
+          extra.saltLength = Number(salt?.length ?? 0);
+          if (saltBuf) {
+            payload = saltBuf;
+            payloadType = "salt";
+          }
+        } else {
+          extra.specType = cls || "(unknown)";
+          try {
+            extra.specValue = String(spec.toString());
+          } catch (_) {
+            /* ignore */
+          }
+        }
+      } catch (_) {
+        /* ignore */
+      }
+
+      return { extra, payload, payloadType };
+    };
 
     // getInstance(String)
     hooks.push(
@@ -105,15 +242,43 @@ export function cipher() {
         function (mode, key) {
           const op = CIPHER_MODES[mode] || String(mode);
           const algo = this.getAlgorithm();
-          send({
-            subject: "crypto",
-            category: "cipher",
-            symbol: "Cipher.init",
-            dir: "enter",
-            line: `Cipher.init(${op}, ${key.$className}) [${algo}]`,
-            backtrace: javaBt(),
-            extra: { op, algo },
-          } satisfies BaseMessage);
+          const keyInfo = inspectKey(key);
+          const line = `Cipher.init(${op}, ${keyInfo.extra.keyClass ?? key.$className}) [${algo}]`;
+          const extra = {
+            op,
+            algo,
+            ...keyInfo.extra,
+          };
+
+          if (keyInfo.payload) {
+            send(
+              {
+                subject: "crypto",
+                category: "cipher",
+                symbol: "Cipher.init",
+                dir: "enter",
+                line,
+                backtrace: javaBt(),
+                extra: {
+                  ...extra,
+                  detailType: keyInfo.payloadType,
+                  len: keyInfo.payload.byteLength,
+                },
+              } satisfies BaseMessage,
+              keyInfo.payload,
+            );
+          } else {
+            send({
+              subject: "crypto",
+              category: "cipher",
+              symbol: "Cipher.init",
+              dir: "enter",
+              line,
+              backtrace: javaBt(),
+              extra,
+            } satisfies BaseMessage);
+          }
+
           this.init(mode, key);
         },
       ),
@@ -132,15 +297,49 @@ export function cipher() {
         function (mode, key, spec) {
           const op = CIPHER_MODES[mode] || String(mode);
           const algo = this.getAlgorithm();
-          send({
-            subject: "crypto",
-            category: "cipher",
-            symbol: "Cipher.init",
-            dir: "enter",
-            line: `Cipher.init(${op}, ${key.$className}, ${spec.$className}) [${algo}]`,
-            backtrace: javaBt(),
-            extra: { op, algo },
-          } satisfies BaseMessage);
+          const keyInfo = inspectKey(key);
+          const specInfo = inspectSpec(spec);
+
+          const line = `Cipher.init(${op}, ${keyInfo.extra.keyClass ?? key.$className}, ${specInfo.extra.specClass ?? spec.$className}) [${algo}]`;
+          const extra = {
+            op,
+            algo,
+            ...keyInfo.extra,
+            ...specInfo.extra,
+          };
+
+          const payload = specInfo.payload ?? keyInfo.payload;
+          const payloadType = specInfo.payloadType ?? keyInfo.payloadType;
+
+          if (payload) {
+            send(
+              {
+                subject: "crypto",
+                category: "cipher",
+                symbol: "Cipher.init",
+                dir: "enter",
+                line,
+                backtrace: javaBt(),
+                extra: {
+                  ...extra,
+                  detailType: payloadType,
+                  len: payload.byteLength,
+                },
+              } satisfies BaseMessage,
+              payload,
+            );
+          } else {
+            send({
+              subject: "crypto",
+              category: "cipher",
+              symbol: "Cipher.init",
+              dir: "enter",
+              line,
+              backtrace: javaBt(),
+              extra,
+            } satisfies BaseMessage);
+          }
+
           this.init(mode, key, spec);
         },
       ),
@@ -150,6 +349,7 @@ export function cipher() {
     hooks.push(
       javaHook(Cipher, "doFinal", [], function () {
         const algo = this.getAlgorithm();
+        const callId = nextCallId("Cipher.doFinal");
         send({
           subject: "crypto",
           category: "cipher",
@@ -157,7 +357,7 @@ export function cipher() {
           dir: "enter",
           line: `Cipher.doFinal() [${algo}]`,
           backtrace: javaBt(),
-          extra: { algo },
+          extra: { algo, callId },
         } satisfies BaseMessage);
         const result = this.doFinal();
         const buf = toBuffer(result);
@@ -169,7 +369,12 @@ export function cipher() {
               symbol: "Cipher.doFinal",
               dir: "leave",
               line: `Cipher.doFinal() → [${buf.byteLength}B] [${algo}]`,
-              extra: { algo, detailType: "output", len: buf.byteLength },
+              extra: {
+                algo,
+                callId,
+                detailType: "output",
+                len: buf.byteLength,
+              },
             } satisfies BaseMessage,
             buf,
           );
@@ -182,6 +387,7 @@ export function cipher() {
     hooks.push(
       javaHook(Cipher, "doFinal", ["[B"], function (input) {
         const algo = this.getAlgorithm();
+        const callId = nextCallId("Cipher.doFinal");
         const inBuf = toBuffer(input);
         if (inBuf) {
           send(
@@ -192,7 +398,12 @@ export function cipher() {
               dir: "enter",
               line: `Cipher.doFinal(input[${inBuf.byteLength}B]) [${algo}]`,
               backtrace: javaBt(),
-              extra: { algo, detailType: "input", len: inBuf.byteLength },
+              extra: {
+                algo,
+                callId,
+                detailType: "input",
+                len: inBuf.byteLength,
+              },
             } satisfies BaseMessage,
             inBuf,
           );
@@ -207,7 +418,12 @@ export function cipher() {
               symbol: "Cipher.doFinal",
               dir: "leave",
               line: `Cipher.doFinal() → [${outBuf.byteLength}B] [${algo}]`,
-              extra: { algo, detailType: "output", len: outBuf.byteLength },
+              extra: {
+                algo,
+                callId,
+                detailType: "output",
+                len: outBuf.byteLength,
+              },
             } satisfies BaseMessage,
             outBuf,
           );
@@ -216,10 +432,189 @@ export function cipher() {
       }),
     );
 
+    // doFinal(byte[], int, int)
+    hooks.push(
+      javaHook(Cipher, "doFinal", ["[B", "int", "int"], function (
+        input,
+        offset,
+        length,
+      ) {
+        const algo = this.getAlgorithm();
+        const callId = nextCallId("Cipher.doFinal");
+        const inBuf = toBufferSlice(input, offset, length);
+        if (inBuf) {
+          send(
+            {
+              subject: "crypto",
+              category: "cipher",
+              symbol: "Cipher.doFinal",
+              dir: "enter",
+              line: `Cipher.doFinal(input[${inBuf.byteLength}B], off=${offset}, len=${length}) [${algo}]`,
+              backtrace: javaBt(),
+              extra: {
+                algo,
+                callId,
+                offset: Number(offset),
+                length: Number(length),
+                detailType: "input",
+                len: inBuf.byteLength,
+              },
+            } satisfies BaseMessage,
+            inBuf,
+          );
+        }
+
+        const result = this.doFinal(input, offset, length);
+        const outBuf = toBuffer(result);
+        if (outBuf) {
+          send(
+            {
+              subject: "crypto",
+              category: "cipher",
+              symbol: "Cipher.doFinal",
+              dir: "leave",
+              line: `Cipher.doFinal(...) → [${outBuf.byteLength}B] [${algo}]`,
+              extra: {
+                algo,
+                callId,
+                detailType: "output",
+                len: outBuf.byteLength,
+              },
+            } satisfies BaseMessage,
+            outBuf,
+          );
+        }
+        return result;
+      }),
+    );
+
+    // doFinal(byte[], int, int, byte[])
+    hooks.push(
+      javaHook(Cipher, "doFinal", ["[B", "int", "int", "[B"], function (
+        input,
+        offset,
+        length,
+        output,
+      ) {
+        const algo = this.getAlgorithm();
+        const callId = nextCallId("Cipher.doFinal");
+        const inBuf = toBufferSlice(input, offset, length);
+        if (inBuf) {
+          send(
+            {
+              subject: "crypto",
+              category: "cipher",
+              symbol: "Cipher.doFinal",
+              dir: "enter",
+              line: `Cipher.doFinal(input[${inBuf.byteLength}B], off=${offset}, len=${length}, out[${output?.length ?? 0}B]) [${algo}]`,
+              backtrace: javaBt(),
+              extra: {
+                algo,
+                callId,
+                offset: Number(offset),
+                length: Number(length),
+                outputCapacity: Number(output?.length ?? 0),
+                detailType: "input",
+                len: inBuf.byteLength,
+              },
+            } satisfies BaseMessage,
+            inBuf,
+          );
+        }
+
+        const written = Number(this.doFinal(input, offset, length, output));
+        const outBuf = toBufferSlice(output, 0, written);
+        if (outBuf) {
+          send(
+            {
+              subject: "crypto",
+              category: "cipher",
+              symbol: "Cipher.doFinal",
+              dir: "leave",
+              line: `Cipher.doFinal(...) → wrote[${written}B] [${algo}]`,
+              extra: {
+                algo,
+                callId,
+                written,
+                detailType: "output",
+                len: outBuf.byteLength,
+              },
+            } satisfies BaseMessage,
+            outBuf,
+          );
+        }
+        return written;
+      }),
+    );
+
+    // doFinal(byte[], int, int, byte[], int)
+    hooks.push(
+      javaHook(
+        Cipher,
+        "doFinal",
+        ["[B", "int", "int", "[B", "int"],
+        function (input, offset, length, output, outOffset) {
+          const algo = this.getAlgorithm();
+          const callId = nextCallId("Cipher.doFinal");
+          const inBuf = toBufferSlice(input, offset, length);
+          if (inBuf) {
+            send(
+              {
+                subject: "crypto",
+                category: "cipher",
+                symbol: "Cipher.doFinal",
+                dir: "enter",
+                line: `Cipher.doFinal(input[${inBuf.byteLength}B], off=${offset}, len=${length}, out[${output?.length ?? 0}B], outOff=${outOffset}) [${algo}]`,
+                backtrace: javaBt(),
+                extra: {
+                  algo,
+                  callId,
+                  offset: Number(offset),
+                  length: Number(length),
+                  outputCapacity: Number(output?.length ?? 0),
+                  outOffset: Number(outOffset),
+                  detailType: "input",
+                  len: inBuf.byteLength,
+                },
+              } satisfies BaseMessage,
+              inBuf,
+            );
+          }
+
+          const written = Number(
+            this.doFinal(input, offset, length, output, outOffset),
+          );
+          const outBuf = toBufferSlice(output, outOffset, written);
+          if (outBuf) {
+            send(
+              {
+                subject: "crypto",
+                category: "cipher",
+                symbol: "Cipher.doFinal",
+                dir: "leave",
+                line: `Cipher.doFinal(...) → wrote[${written}B @${outOffset}] [${algo}]`,
+                extra: {
+                  algo,
+                  callId,
+                  written,
+                  outOffset: Number(outOffset),
+                  detailType: "output",
+                  len: outBuf.byteLength,
+                },
+              } satisfies BaseMessage,
+              outBuf,
+            );
+          }
+          return written;
+        },
+      ),
+    );
+
     // update(byte[])
     hooks.push(
       javaHook(Cipher, "update", ["[B"], function (input) {
         const algo = this.getAlgorithm();
+        const callId = nextCallId("Cipher.update");
         const inBuf = toBuffer(input);
         if (inBuf) {
           send(
@@ -230,7 +625,12 @@ export function cipher() {
               dir: "enter",
               line: `Cipher.update(input[${inBuf.byteLength}B]) [${algo}]`,
               backtrace: javaBt(),
-              extra: { algo, detailType: "input", len: inBuf.byteLength },
+              extra: {
+                algo,
+                callId,
+                detailType: "input",
+                len: inBuf.byteLength,
+              },
             } satisfies BaseMessage,
             inBuf,
           );
@@ -245,13 +645,194 @@ export function cipher() {
               symbol: "Cipher.update",
               dir: "leave",
               line: `Cipher.update() → [${outBuf.byteLength}B] [${algo}]`,
-              extra: { algo, detailType: "output", len: outBuf.byteLength },
+              extra: {
+                algo,
+                callId,
+                detailType: "output",
+                len: outBuf.byteLength,
+              },
             } satisfies BaseMessage,
             outBuf,
           );
         }
         return result;
       }),
+    );
+
+    // update(byte[], int, int)
+    hooks.push(
+      javaHook(Cipher, "update", ["[B", "int", "int"], function (
+        input,
+        offset,
+        length,
+      ) {
+        const algo = this.getAlgorithm();
+        const callId = nextCallId("Cipher.update");
+        const inBuf = toBufferSlice(input, offset, length);
+        if (inBuf) {
+          send(
+            {
+              subject: "crypto",
+              category: "cipher",
+              symbol: "Cipher.update",
+              dir: "enter",
+              line: `Cipher.update(input[${inBuf.byteLength}B], off=${offset}, len=${length}) [${algo}]`,
+              backtrace: javaBt(),
+              extra: {
+                algo,
+                callId,
+                offset: Number(offset),
+                length: Number(length),
+                detailType: "input",
+                len: inBuf.byteLength,
+              },
+            } satisfies BaseMessage,
+            inBuf,
+          );
+        }
+
+        const result = this.update(input, offset, length);
+        const outBuf = toBuffer(result);
+        if (outBuf) {
+          send(
+            {
+              subject: "crypto",
+              category: "cipher",
+              symbol: "Cipher.update",
+              dir: "leave",
+              line: `Cipher.update(...) → [${outBuf.byteLength}B] [${algo}]`,
+              extra: {
+                algo,
+                callId,
+                detailType: "output",
+                len: outBuf.byteLength,
+              },
+            } satisfies BaseMessage,
+            outBuf,
+          );
+        }
+        return result;
+      }),
+    );
+
+    // update(byte[], int, int, byte[])
+    hooks.push(
+      javaHook(Cipher, "update", ["[B", "int", "int", "[B"], function (
+        input,
+        offset,
+        length,
+        output,
+      ) {
+        const algo = this.getAlgorithm();
+        const callId = nextCallId("Cipher.update");
+        const inBuf = toBufferSlice(input, offset, length);
+        if (inBuf) {
+          send(
+            {
+              subject: "crypto",
+              category: "cipher",
+              symbol: "Cipher.update",
+              dir: "enter",
+              line: `Cipher.update(input[${inBuf.byteLength}B], off=${offset}, len=${length}, out[${output?.length ?? 0}B]) [${algo}]`,
+              backtrace: javaBt(),
+              extra: {
+                algo,
+                callId,
+                offset: Number(offset),
+                length: Number(length),
+                outputCapacity: Number(output?.length ?? 0),
+                detailType: "input",
+                len: inBuf.byteLength,
+              },
+            } satisfies BaseMessage,
+            inBuf,
+          );
+        }
+
+        const written = Number(this.update(input, offset, length, output));
+        const outBuf = toBufferSlice(output, 0, written);
+        if (outBuf) {
+          send(
+            {
+              subject: "crypto",
+              category: "cipher",
+              symbol: "Cipher.update",
+              dir: "leave",
+              line: `Cipher.update(...) → wrote[${written}B] [${algo}]`,
+              extra: {
+                algo,
+                callId,
+                written,
+                detailType: "output",
+                len: outBuf.byteLength,
+              },
+            } satisfies BaseMessage,
+            outBuf,
+          );
+        }
+        return written;
+      }),
+    );
+
+    // update(byte[], int, int, byte[], int)
+    hooks.push(
+      javaHook(
+        Cipher,
+        "update",
+        ["[B", "int", "int", "[B", "int"],
+        function (input, offset, length, output, outOffset) {
+          const algo = this.getAlgorithm();
+          const callId = nextCallId("Cipher.update");
+          const inBuf = toBufferSlice(input, offset, length);
+          if (inBuf) {
+            send(
+              {
+                subject: "crypto",
+                category: "cipher",
+                symbol: "Cipher.update",
+                dir: "enter",
+                line: `Cipher.update(input[${inBuf.byteLength}B], off=${offset}, len=${length}, out[${output?.length ?? 0}B], outOff=${outOffset}) [${algo}]`,
+                backtrace: javaBt(),
+                extra: {
+                  algo,
+                  callId,
+                  offset: Number(offset),
+                  length: Number(length),
+                  outputCapacity: Number(output?.length ?? 0),
+                  outOffset: Number(outOffset),
+                  detailType: "input",
+                  len: inBuf.byteLength,
+                },
+              } satisfies BaseMessage,
+              inBuf,
+            );
+          }
+
+          const written = Number(this.update(input, offset, length, output, outOffset));
+          const outBuf = toBufferSlice(output, outOffset, written);
+          if (outBuf) {
+            send(
+              {
+                subject: "crypto",
+                category: "cipher",
+                symbol: "Cipher.update",
+                dir: "leave",
+                line: `Cipher.update(...) → wrote[${written}B @${outOffset}] [${algo}]`,
+                extra: {
+                  algo,
+                  callId,
+                  written,
+                  outOffset: Number(outOffset),
+                  detailType: "output",
+                  len: outBuf.byteLength,
+                },
+              } satisfies BaseMessage,
+              outBuf,
+            );
+          }
+          return written;
+        },
+      ),
     );
   });
 

@@ -15,6 +15,8 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSession, Status } from "@/context/SessionContext";
 import { useDroidQuery } from "@/lib/queries";
+import { HookScriptsManager } from "./HookScriptsManager";
+import { ScenarioManager } from "./ScenarioManager";
 
 interface TapInfo {
   id: string;
@@ -64,22 +66,25 @@ const HOOK_GROUPS: HookGroup[] = [
 
 export function DroidHookControlPanel() {
   const { t } = useTranslation();
-  const { droid, status } = useSession();
+  const { droid, status, device, identifier } = useSession();
   const [hookStatus, setHookStatus] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [removingHook, setRemovingHook] = useState<string | null>(null);
+  const queryEnabled = status === Status.Ready && !!device && !!identifier;
 
   const { data: tapList, isLoading: isLoadingStatus } = useDroidQuery<TapInfo[]>(
-    ["tapsList"],
+    ["tapsList", device ?? "", identifier ?? ""],
     (api) => api.taps.list(),
+    { enabled: queryEnabled },
   );
 
   const {
     data: userHooks = [],
     refetch: refetchUserHooks,
   } = useDroidQuery<UserHook[]>(
-    ["userHooks"],
+    ["userHooks", device ?? "", identifier ?? ""],
     (api) => api.hook.userHooks(),
+    { enabled: queryEnabled },
   );
 
   useEffect(() => {
@@ -136,7 +141,7 @@ export function DroidHookControlPanel() {
 
   const isDisabled = status !== Status.Ready;
 
-  if (isLoadingStatus) {
+  if (queryEnabled && isLoadingStatus) {
     return (
       <div className="p-3 space-y-4">
         <Skeleton className="h-5 w-20" />
@@ -252,6 +257,20 @@ export function DroidHookControlPanel() {
             })}
           </div>
         )}
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+          {t("hook_scripts")}
+        </h3>
+        <HookScriptsManager />
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+          {t("test_scenarios")}
+        </h3>
+        <ScenarioManager />
       </div>
     </div>
   );

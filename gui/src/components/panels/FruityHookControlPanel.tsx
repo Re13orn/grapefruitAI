@@ -15,6 +15,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useSession, Status } from "@/context/SessionContext";
 import { useFruityQuery } from "@/lib/queries";
 import { FruityUserHooksList } from "./FruityUserHooksList";
+import { HookScriptsManager } from "./HookScriptsManager";
+import { ScenarioManager } from "./ScenarioManager";
 
 interface TapInfo {
   id: string;
@@ -64,14 +66,16 @@ const HOOK_GROUPS: HookGroup[] = [
 
 export function FruityHookControlPanel() {
   const { t } = useTranslation();
-  const { fruity, status } = useSession();
+  const { fruity, status, device, identifier } = useSession();
   const [hookStatus, setHookStatus] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
+  const queryEnabled = status === Status.Ready && !!device && !!identifier;
 
   // Fetch tap status from agent via taps.list() RPC
   const { data: tapList, isLoading: isLoadingStatus } = useFruityQuery<TapInfo[]>(
-    ["tapsList"],
+    ["tapsList", device ?? "", identifier ?? ""],
     (api) => api.taps.list(),
+    { enabled: queryEnabled },
   );
 
   // Update local state when tap list is fetched
@@ -109,7 +113,7 @@ export function FruityHookControlPanel() {
 
   const isDisabled = status !== Status.Ready;
 
-  if (isLoadingStatus) {
+  if (queryEnabled && isLoadingStatus) {
     return (
       <div className="p-3 space-y-4">
         <Skeleton className="h-5 w-20" />
@@ -186,6 +190,20 @@ export function FruityHookControlPanel() {
           {t("hook_user_defined")}
         </h3>
         <FruityUserHooksList />
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+          {t("hook_scripts")}
+        </h3>
+        <HookScriptsManager />
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+          {t("test_scenarios")}
+        </h3>
+        <ScenarioManager />
       </div>
     </div>
   );

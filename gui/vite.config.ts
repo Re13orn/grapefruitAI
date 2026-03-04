@@ -5,7 +5,25 @@ import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
-const api = `http://localhost:${process.env.PORT || 31337}`;
+// Do not use generic PORT here.
+// In some environments PORT points to Vite dev server port (e.g. 5173),
+// which makes /api proxy loop back to frontend and return index.html.
+const backendPort =
+  process.env.BACKEND_PORT ||
+  process.env.GRAPEFRUIT_BACKEND_PORT ||
+  "31337";
+const backendHost =
+  process.env.BACKEND_HOST ||
+  process.env.GRAPEFRUIT_BACKEND_HOST ||
+  "127.0.0.1";
+
+function formatHostForUrl(host: string) {
+  return host.includes(":") && !host.startsWith("[")
+    ? `[${host}]`
+    : host;
+}
+
+const api = `http://${formatHostForUrl(backendHost)}:${backendPort}`;
 
 const R2_WASM_PATH = path.join(
   import.meta.dirname,

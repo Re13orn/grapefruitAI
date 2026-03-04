@@ -1,6 +1,6 @@
 import Java from "frida-java-bridge";
 
-import type { BaseMessage } from "@/common/hooks/context.js";
+import { type BaseMessage, nextCallId } from "@/common/hooks/context.js";
 import { patch as createPatch, backtrace } from "@/common/hooks/java.js";
 import { toJS } from "@/droid/bridge/object.js";
 
@@ -103,6 +103,7 @@ function hookActivityStart() {
     Activity.startActivity.overload("android.content.Intent"),
     (original, self, args) => {
       const [intent] = args as [Java.Wrapper];
+      const callId = nextCallId("intent");
 
       send({
         subject: "hook",
@@ -111,7 +112,7 @@ function hookActivityStart() {
         dir: "enter",
         line: `startActivity(${intentSummary(intent)})`,
         backtrace: backtrace(),
-        extra: { op: "startActivity", caller: self.$className, ...describeIntent(intent) },
+        extra: { callId, op: "startActivity", caller: self.$className, ...describeIntent(intent) },
       } satisfies BaseMessage);
 
       return original.call(self, intent);
@@ -124,6 +125,7 @@ function hookActivityStart() {
       Activity.startActivity.overload("android.content.Intent", "android.os.Bundle"),
       (original, self, args) => {
         const [intent, options] = args as [Java.Wrapper, Java.Wrapper | null];
+        const callId = nextCallId("intent");
 
         send({
           subject: "hook",
@@ -132,7 +134,7 @@ function hookActivityStart() {
           dir: "enter",
           line: `startActivity(${intentSummary(intent)}, options)`,
           backtrace: backtrace(),
-          extra: { op: "startActivity", caller: self.$className, ...describeIntent(intent) },
+          extra: { callId, op: "startActivity", caller: self.$className, ...describeIntent(intent) },
         } satisfies BaseMessage);
 
         return original.call(self, intent, options);
@@ -146,6 +148,7 @@ function hookActivityStart() {
       Activity.startActivityForResult.overload("android.content.Intent", "int"),
       (original, self, args) => {
         const [intent, requestCode] = args as [Java.Wrapper, number];
+        const callId = nextCallId("intent");
 
         send({
           subject: "hook",
@@ -155,6 +158,7 @@ function hookActivityStart() {
           line: `startActivityForResult(${intentSummary(intent)}, ${requestCode})`,
           backtrace: backtrace(),
           extra: {
+            callId,
             op: "startActivityForResult",
             caller: self.$className,
             requestCode,
@@ -177,6 +181,7 @@ function hookActivityStart() {
       ),
       (original, self, args) => {
         const [intent, requestCode, options] = args as [Java.Wrapper, number, Java.Wrapper | null];
+        const callId = nextCallId("intent");
 
         send({
           subject: "hook",
@@ -186,6 +191,7 @@ function hookActivityStart() {
           line: `startActivityForResult(${intentSummary(intent)}, ${requestCode}, options)`,
           backtrace: backtrace(),
           extra: {
+            callId,
             op: "startActivityForResult",
             caller: self.$className,
             requestCode,
@@ -207,6 +213,7 @@ function hookServiceStart() {
     ContextWrapper.startService.overload("android.content.Intent"),
     (original, self, args) => {
       const [intent] = args as [Java.Wrapper];
+      const callId = nextCallId("intent");
 
       send({
         subject: "hook",
@@ -215,7 +222,7 @@ function hookServiceStart() {
         dir: "enter",
         line: `startService(${intentSummary(intent)})`,
         backtrace: backtrace(),
-        extra: { op: "startService", caller: self.$className, ...describeIntent(intent) },
+        extra: { callId, op: "startService", caller: self.$className, ...describeIntent(intent) },
       } satisfies BaseMessage);
 
       return original.call(self, intent);
@@ -228,6 +235,7 @@ function hookServiceStart() {
       ContextWrapper.stopService.overload("android.content.Intent"),
       (original, self, args) => {
         const [intent] = args as [Java.Wrapper];
+        const callId = nextCallId("intent");
 
         send({
           subject: "hook",
@@ -236,7 +244,7 @@ function hookServiceStart() {
           dir: "enter",
           line: `stopService(${intentSummary(intent)})`,
           backtrace: backtrace(),
-          extra: { op: "stopService", caller: self.$className, ...describeIntent(intent) },
+          extra: { callId, op: "stopService", caller: self.$className, ...describeIntent(intent) },
         } satisfies BaseMessage);
 
         return original.call(self, intent);
@@ -254,6 +262,7 @@ function hookServiceStart() {
       ),
       (original, self, args) => {
         const [intent, conn, flags] = args as [Java.Wrapper, Java.Wrapper, number];
+        const callId = nextCallId("intent");
 
         send({
           subject: "hook",
@@ -263,6 +272,7 @@ function hookServiceStart() {
           line: `bindService(${intentSummary(intent)}, flags=0x${(flags >>> 0).toString(16)})`,
           backtrace: backtrace(),
           extra: {
+            callId,
             op: "bindService",
             caller: self.$className,
             flags: `0x${(flags >>> 0).toString(16)}`,
@@ -281,6 +291,7 @@ function hookServiceStart() {
       ContextWrapper.startForegroundService.overload("android.content.Intent"),
       (original, self, args) => {
         const [intent] = args as [Java.Wrapper];
+        const callId = nextCallId("intent");
 
         send({
           subject: "hook",
@@ -289,7 +300,12 @@ function hookServiceStart() {
           dir: "enter",
           line: `startForegroundService(${intentSummary(intent)})`,
           backtrace: backtrace(),
-          extra: { op: "startForegroundService", caller: self.$className, ...describeIntent(intent) },
+          extra: {
+            callId,
+            op: "startForegroundService",
+            caller: self.$className,
+            ...describeIntent(intent),
+          },
         } satisfies BaseMessage);
 
         return original.call(self, intent);

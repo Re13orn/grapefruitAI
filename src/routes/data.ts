@@ -15,6 +15,17 @@ import { XPCStore } from "../lib/store/xpc.ts";
 import { HermesStore } from "../lib/store/hermes.ts";
 import { PrivacyStore } from "../lib/store/privacy.ts";
 import { createTapStore } from "../lib/store/taps.ts";
+import {
+  createHookScriptStore,
+  createHookScriptPresetStore,
+  ensureBuiltinHookScripts,
+  type HookScriptInput,
+  type HookScriptPatch,
+  type HookScriptPresetInput,
+  type HookScriptPresetPatch,
+  type HookScriptPresetItem,
+} from "../lib/store/scripts.ts";
+import { listBuiltinHookScriptTemplates } from "../lib/builtin-hooks.ts";
 import { toHAR } from "../lib/har.ts";
 const LOG_TAIL_BYTES = 1024 * 1024; // 1MB
 
@@ -29,6 +40,121 @@ interface LogStore<TRecord> {
   query(options: QueryOptions, defaultLimit: number): TRecord[];
   count(filters?: Record<string, string | number | boolean>): number;
   rm(): void;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function parseScriptInput(body: unknown): HookScriptInput | null {
+  if (!isRecord(body)) return null;
+  const { name, content, enabled, runOnAppLaunch } = body;
+  if (typeof name !== "string" || typeof content !== "string") return null;
+  if (typeof enabled !== "undefined" && typeof enabled !== "boolean")
+    return null;
+  if (
+    typeof runOnAppLaunch !== "undefined" &&
+    typeof runOnAppLaunch !== "boolean"
+  )
+    return null;
+
+  return { name, content, enabled, runOnAppLaunch };
+}
+
+function parseScriptPatch(body: unknown): HookScriptPatch | null {
+  if (!isRecord(body)) return null;
+  const patch: HookScriptPatch = {};
+
+  if ("name" in body) {
+    if (typeof body.name !== "string") return null;
+    patch.name = body.name;
+  }
+  if ("content" in body) {
+    if (typeof body.content !== "string") return null;
+    patch.content = body.content;
+  }
+  if ("enabled" in body) {
+    if (typeof body.enabled !== "boolean") return null;
+    patch.enabled = body.enabled;
+  }
+  if ("runOnAppLaunch" in body) {
+    if (typeof body.runOnAppLaunch !== "boolean") return null;
+    patch.runOnAppLaunch = body.runOnAppLaunch;
+  }
+
+  if (Object.keys(patch).length === 0) return null;
+  return patch;
+}
+
+function parseScriptPresetItems(value: unknown): HookScriptPresetItem[] | null {
+  if (!Array.isArray(value)) return null;
+  const items: HookScriptPresetItem[] = [];
+
+  for (const raw of value) {
+    if (!isRecord(raw)) return null;
+    const { scriptId, enabled, runOnAppLaunch } = raw;
+    if (typeof scriptId !== "string") return null;
+    if (typeof enabled !== "boolean") return null;
+    if (typeof runOnAppLaunch !== "boolean") return null;
+    items.push({ scriptId, enabled, runOnAppLaunch });
+  }
+
+  return items;
+}
+
+function parseScriptPresetInput(body: unknown): HookScriptPresetInput | null {
+  if (!isRecord(body)) return null;
+  const { name, items, autoApplyOnAppLaunch } = body;
+  if (typeof name !== "string") return null;
+  const parsedItems = parseScriptPresetItems(items);
+  if (!parsedItems) return null;
+  if (
+    typeof autoApplyOnAppLaunch !== "undefined" &&
+    typeof autoApplyOnAppLaunch !== "boolean"
+  ) {
+    return null;
+  }
+  return { name, items: parsedItems, autoApplyOnAppLaunch };
+}
+
+function parseScriptPresetPatch(body: unknown): HookScriptPresetPatch | null {
+  if (!isRecord(body)) return null;
+  const patch: HookScriptPresetPatch = {};
+
+  if ("name" in body) {
+    if (typeof body.name !== "string") return null;
+    patch.name = body.name;
+  }
+
+  if ("items" in body) {
+    const parsedItems = parseScriptPresetItems(body.items);
+    if (!parsedItems) return null;
+    patch.items = parsedItems;
+  }
+  if ("autoApplyOnAppLaunch" in body) {
+    if (typeof body.autoApplyOnAppLaunch !== "boolean") return null;
+    patch.autoApplyOnAppLaunch = body.autoApplyOnAppLaunch;
+  }
+
+  if (Object.keys(patch).length === 0) return null;
+  return patch;
+}
+
+function parseHookPlatform(value: string | undefined): "droid" | "fruity" | null {
+  if (value === "droid" || value === "fruity") return value;
+  return null;
+}
+
+function parseBooleanQuery(value: string | undefined): boolean | undefined {
+  if (typeof value === "undefined") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "1" || normalized === "true" || normalized === "yes") {
+    return true;
+  }
+  if (normalized === "0" || normalized === "false" || normalized === "no") {
+    return false;
+  }
+  return undefined;
 }
 
 /**
@@ -461,6 +587,183 @@ const routes = new Hono()
     const identifier = c.req.param("identifier");
 
     createTapStore(deviceId, identifier).clear();
+    return c.body(null, 204);
+  })
+  .get("/script-templates/:platform", (c) => {
+    const platform = parseHookPlatform(c.req.param("platform"));
+    if (!platform) {
+      return c.json({ error: "invalid platform" }, 400);
+    }
+
+    const deviceId = c.req.query("device");
+    const identifier = c.req.query("identifier");
+    const includeTargeted = parseBooleanQuery(c.req.query("includeTargeted")) === true;
+    const importedNames = new Set<string>();
+
+    if (typeof deviceId === "string" && typeof identifier === "string") {
+      const scripts = createHookScriptStore(deviceId, identifier).list();
+      for (const item of scripts) {
+        importedNames.add(item.name);
+      }
+    }
+
+    const normalizedIdentifier =
+      typeof identifier === "string" && identifier.trim().length > 0
+        ? identifier.trim()
+        : undefined;
+    const builtinTemplates = listBuiltinHookScriptTemplates(
+      platform,
+      normalizedIdentifier,
+    ).filter((tpl) => includeTargeted || tpl.identifiers.length === 0);
+
+    const templates = builtinTemplates.map((tpl) => ({
+      id: tpl.id,
+      name: tpl.name,
+      description: tpl.description,
+      platform: tpl.platform,
+      identifiers: tpl.identifiers,
+      content: tpl.content,
+      enabled: tpl.enabled,
+      runOnAppLaunch: tpl.runOnAppLaunch,
+      recommended:
+        typeof normalizedIdentifier === "string" &&
+        tpl.identifiers.length > 0 &&
+        tpl.identifiers.includes(normalizedIdentifier),
+      imported: importedNames.has(tpl.name),
+    }));
+
+    return c.json(templates);
+  })
+  // Custom hook scripts endpoints
+  .get("/scripts/:device/:identifier", (c) => {
+    const deviceId = c.req.param("device");
+    const identifier = c.req.param("identifier");
+    const platform = parseHookPlatform(c.req.query("platform"));
+    const includeTargeted = parseBooleanQuery(c.req.query("includeTargeted")) === true;
+    if (platform) {
+      ensureBuiltinHookScripts(deviceId, identifier, platform, {
+        includeTargeted,
+      });
+    }
+    const store = createHookScriptStore(deviceId, identifier);
+    return c.json(store.list());
+  })
+  .post("/scripts/:device/:identifier", async (c) => {
+    const deviceId = c.req.param("device");
+    const identifier = c.req.param("identifier");
+    const body = await c.req.json().catch(() => null);
+    const input = parseScriptInput(body);
+    if (!input) {
+      return c.json({ error: "invalid script payload" }, 400);
+    }
+
+    if (input.content.length > 200_000) {
+      return c.json({ error: "script content is too large" }, 400);
+    }
+
+    const created = createHookScriptStore(deviceId, identifier).create(input);
+    return c.json(created, 201);
+  })
+  .put("/scripts/:device/:identifier/:id", async (c) => {
+    const deviceId = c.req.param("device");
+    const identifier = c.req.param("identifier");
+    const id = c.req.param("id");
+    const body = await c.req.json().catch(() => null);
+    const patch = parseScriptPatch(body);
+    if (!patch) {
+      return c.json({ error: "invalid script patch payload" }, 400);
+    }
+    if (typeof patch.content === "string" && patch.content.length > 200_000) {
+      return c.json({ error: "script content is too large" }, 400);
+    }
+
+    const updated = createHookScriptStore(deviceId, identifier).update(id, patch);
+    if (!updated) {
+      return c.json({ error: "script not found" }, 404);
+    }
+    return c.json(updated);
+  })
+  .delete("/scripts/:device/:identifier/:id", (c) => {
+    const deviceId = c.req.param("device");
+    const identifier = c.req.param("identifier");
+    const id = c.req.param("id");
+    const removed = createHookScriptStore(deviceId, identifier).remove(id);
+    if (!removed) {
+      return c.json({ error: "script not found" }, 404);
+    }
+    return c.body(null, 204);
+  })
+  // Script presets endpoints
+  .get("/script-presets/:device/:identifier", (c) => {
+    const deviceId = c.req.param("device");
+    const identifier = c.req.param("identifier");
+    const store = createHookScriptPresetStore(deviceId, identifier);
+    return c.json(store.list());
+  })
+  .post("/script-presets/:device/:identifier", async (c) => {
+    const deviceId = c.req.param("device");
+    const identifier = c.req.param("identifier");
+    const body = await c.req.json().catch(() => null);
+    const input = parseScriptPresetInput(body);
+    if (!input) {
+      return c.json({ error: "invalid script preset payload" }, 400);
+    }
+    if (input.items.length > 500) {
+      return c.json({ error: "too many items in preset" }, 400);
+    }
+
+    const created = createHookScriptPresetStore(deviceId, identifier).create(input);
+    return c.json(created, 201);
+  })
+  .put("/script-presets/:device/:identifier/:id", async (c) => {
+    const deviceId = c.req.param("device");
+    const identifier = c.req.param("identifier");
+    const id = c.req.param("id");
+    const body = await c.req.json().catch(() => null);
+    const patch = parseScriptPresetPatch(body);
+    if (!patch) {
+      return c.json({ error: "invalid script preset patch payload" }, 400);
+    }
+    if (Array.isArray(patch.items) && patch.items.length > 500) {
+      return c.json({ error: "too many items in preset" }, 400);
+    }
+
+    const updated = createHookScriptPresetStore(deviceId, identifier).update(
+      id,
+      patch,
+    );
+    if (!updated) {
+      return c.json({ error: "script preset not found" }, 404);
+    }
+    return c.json(updated);
+  })
+  .post("/script-presets/:device/:identifier/:id/apply", (c) => {
+    const deviceId = c.req.param("device");
+    const identifier = c.req.param("identifier");
+    const id = c.req.param("id");
+    const presetStore = createHookScriptPresetStore(deviceId, identifier);
+    const preset = presetStore.get(id);
+    if (!preset) {
+      return c.json({ error: "script preset not found" }, 404);
+    }
+
+    const scripts = createHookScriptStore(deviceId, identifier).applyPreset(
+      preset.items,
+    );
+    return c.json({
+      presetId: preset.id,
+      applied: preset.items.length,
+      scripts,
+    });
+  })
+  .delete("/script-presets/:device/:identifier/:id", (c) => {
+    const deviceId = c.req.param("device");
+    const identifier = c.req.param("identifier");
+    const id = c.req.param("id");
+    const removed = createHookScriptPresetStore(deviceId, identifier).remove(id);
+    if (!removed) {
+      return c.json({ error: "script preset not found" }, 404);
+    }
     return c.body(null, 204);
   });
 

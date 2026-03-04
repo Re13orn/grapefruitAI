@@ -44,8 +44,6 @@ interface MethodRowProps {
   onGenerate: (name: string) => void;
   onDisasm: (address: string, name: string) => void;
   hookDisabled: boolean;
-  hookAddLabel: string;
-  generateLabel: string;
 }
 
 function MethodRow({
@@ -58,9 +56,8 @@ function MethodRow({
   onGenerate,
   onDisasm,
   hookDisabled,
-  hookAddLabel,
-  generateLabel,
 }: RowComponentProps<MethodRowProps>) {
+  const { t } = useTranslation();
   const { name: method, types, impl } = methods[index];
 
   return (
@@ -91,7 +88,7 @@ function MethodRow({
           className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
           onClick={() => onHook(method)}
           disabled={hookDisabled}
-          title={hookAddLabel}
+          title={t("hook_add")}
         >
           <Anchor className="h-3.5 w-3.5" />
         </Button>
@@ -100,7 +97,7 @@ function MethodRow({
           size="icon"
           className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
           onClick={() => onGenerate(method)}
-          title={generateLabel}
+          title={t("hook_generate_code")}
         >
           <Code className="h-3.5 w-3.5" />
         </Button>
@@ -275,6 +272,26 @@ export function FruityClassDetailTab({
   }, [fruity, status, classInfo, selectedMethods, navigate, hooksPath, t]);
 
   const selectedCount = selectedMethods.size;
+  const rowProps = useMemo(
+    () => ({
+      methods: displayedMethods,
+      selectedMethods,
+      onSelect: handleSelectMethod,
+      onHook: handleHookMethod,
+      onGenerate: handleGenerateCode,
+      onDisasm: openDisassemblyTab,
+      hookDisabled: status !== Status.Ready,
+    }),
+    [
+      displayedMethods,
+      selectedMethods,
+      handleSelectMethod,
+      handleHookMethod,
+      handleGenerateCode,
+      openDisassemblyTab,
+      status,
+    ],
+  );
 
   if (isLoading) {
     return (
@@ -390,17 +407,7 @@ export function FruityClassDetailTab({
                 rowComponent={MethodRow}
                 rowCount={displayedMethods.length}
                 rowHeight={METHOD_ROW_HEIGHT}
-                rowProps={{
-                  methods: displayedMethods,
-                  selectedMethods,
-                  onSelect: handleSelectMethod,
-                  onHook: handleHookMethod,
-                  onGenerate: handleGenerateCode,
-                  onDisasm: openDisassemblyTab,
-                  hookDisabled: status !== Status.Ready,
-                  hookAddLabel: t("hook_add"),
-                  generateLabel: t("hook_generate_code"),
-                }}
+                rowProps={rowProps}
               />
             </div>
           ) : (

@@ -16,6 +16,18 @@ import type {
   MemoryScanEvent,
 } from "./types.ts";
 
+interface RelayHandle {
+  flush: () => Promise<void>;
+}
+
+interface RelayContext {
+  pid: number;
+  sessionId: string;
+}
+
+const REQUEST_BODY_TRACK_TTL_MS = 60_000;
+const REQUEST_BODY_TRACK_MAX = 10_000;
+
 async function loadBridge(name: string) {
   const valid = ["objc", "java", "swift"];
   const lower = name.toLowerCase();
@@ -34,17 +46,84 @@ export function setup(
   >,
   logger: LogWriter,
   stores: SessionStores,
-) {
-  const requestsWithBody = new Set<string>();
+  context?: RelayContext,
+): RelayHandle {
+  const requestsWithBody = new Map<string, number>();
+  const pendingAttachmentWrites = new Set<Promise<void>>();
+
+  const appendHookEvidence = (
+    category: string,
+    symbol: string,
+    line: string,
+    extra?: Record<string, unknown>,
+  ) => {
+    const msg: BaseMessage = {
+      subject: "hook",
+      category,
+      symbol,
+      dir: "leave",
+      line,
+      extra: {
+        pid: context?.pid,
+        sessionId: context?.sessionId,
+        ...extra,
+      },
+    };
+    socket.emit("hook", msg);
+    stores.hooks.append(msg);
+  };
+
+  const pruneRequestsWithBody = (now = Date.now()) => {
+    for (const [requestId, trackedAt] of requestsWithBody) {
+      if (now - trackedAt > REQUEST_BODY_TRACK_TTL_MS) {
+        requestsWithBody.delete(requestId);
+      }
+    }
+
+    while (requestsWithBody.size > REQUEST_BODY_TRACK_MAX) {
+      const first = requestsWithBody.keys().next();
+      if (first.done) break;
+      requestsWithBody.delete(first.value);
+    }
+  };
+
+  const trackAttachmentWrite = (task: Promise<void>) => {
+    pendingAttachmentWrites.add(task);
+    task.finally(() => {
+      pendingAttachmentWrites.delete(task);
+    });
+  };
+
+  const flushAttachmentWrites = async () => {
+    if (pendingAttachmentWrites.size === 0) return;
+    await Promise.allSettled(Array.from(pendingAttachmentWrites));
+  };
 
   script.destroyed.connect(() => {
     console.error("script is destroyed");
-    socket.disconnect(true);
+    void flushAttachmentWrites().finally(() => {
+      socket.disconnect(true);
+    });
   });
 
   script.message.connect((message, data) => {
     if (message.type === "error") {
       console.error("script error:", message);
+      const payload =
+        typeof message.description === "string"
+          ? message.description
+          : JSON.stringify(message);
+      appendHookEvidence(
+        "script.error",
+        "script.message.error",
+        payload,
+        {
+          stack: message.stack,
+          fileName: message.fileName,
+          lineNumber: message.lineNumber,
+          columnNumber: message.columnNumber,
+        },
+      );
       return;
     }
 
@@ -52,6 +131,7 @@ export function setup(
 
     const { payload } = message;
     const { subject } = payload as { subject: string };
+    pruneRequestsWithBody();
 
     switch (subject) {
       case "frida:load-bridge":
@@ -75,9 +155,10 @@ export function setup(
 
       case "nsurl": {
         let event = payload as NSURLEvent;
+        pruneRequestsWithBody();
 
         if (event.event === "dataReceived" && data) {
-          requestsWithBody.add(event.requestId);
+          requestsWithBody.set(event.requestId, Date.now());
         }
 
         if (
@@ -96,10 +177,15 @@ export function setup(
         try {
           const attachment = stores.nsurl.upsert(event);
           if (attachment && data) {
-            fs.promises
-              .mkdir(stores.nsurl.attachmentsDir, { recursive: true })
-              .then(() => fs.promises.appendFile(attachment, Buffer.from(data)))
-              .catch((e) => console.error("Failed to write attachment:", e));
+            const task = (async () => {
+              await fs.promises.mkdir(stores.nsurl.attachmentsDir, {
+                recursive: true,
+              });
+              await fs.promises.appendFile(attachment, Buffer.from(data));
+            })().catch((e) => {
+              console.error("Failed to write attachment:", e);
+            });
+            trackAttachmentWrite(task);
           }
         } catch (e) {
           console.error("Failed to persist NSURL event:", e);
@@ -146,6 +232,18 @@ export function setup(
 
       case "hook": {
         const msg = payload as BaseMessage;
+        if (msg.extra && typeof msg.extra === "object") {
+          msg.extra = {
+            pid: context?.pid,
+            sessionId: context?.sessionId,
+            ...msg.extra,
+          };
+        } else {
+          msg.extra = {
+            pid: context?.pid,
+            sessionId: context?.sessionId,
+          };
+        }
         socket.emit("hook", msg);
         stores.hooks.append(msg);
         break;
@@ -184,6 +282,12 @@ export function setup(
 
       default:
         console.debug("send", payload);
+        appendHookEvidence(
+          "script.send",
+          "script.send.unhandled",
+          "unhandled send payload",
+          { payload },
+        );
     }
   });
 
@@ -191,5 +295,10 @@ export function setup(
     console.log(`[agent][${level}] ${text}`);
     socket.emit("log", level, text);
     logger.appendAgentLog(level, text);
+    appendHookEvidence("script.console", `console.${level}`, text, { level });
+  };
+
+  return {
+    flush: flushAttachmentWrites,
   };
 }

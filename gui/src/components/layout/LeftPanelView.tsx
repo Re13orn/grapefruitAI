@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/tooltip";
 import { DarkmodeToggle } from "../shared/DarkmodeToggle";
 import { LanguageSelector } from "../shared/LanguageSelector";
+import { McpControl } from "../shared/McpControl";
 import { useSession, Mode } from "@/context/SessionContext";
 import { getRouteFeatures } from "@/lib/features";
 
@@ -118,6 +119,7 @@ export function LeftPanelView() {
         {/* Settings at bottom */}
         <div className="flex flex-col gap-1 py-2 items-center">
           <LanguageSelector />
+          <McpControl />
           <DarkmodeToggle />
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Search, Globe, Play, CircleAlert, Info } from "lucide-react";
 import { List, type RowComponentProps } from "react-window";
@@ -149,13 +149,12 @@ function QueryPane({ initialUri }: { initialUri: string }) {
     { uri: string; options?: QueryOptions }
   >((api, { uri, options }) => api.provider.query(uri, options));
 
-  // Sync URI and clear results when provider selection changes
-  const [lastInitialUri, setLastInitialUri] = useState(initialUri);
-  if (initialUri !== lastInitialUri) {
+  useEffect(() => {
     setUri(initialUri);
-    setLastInitialUri(initialUri);
     queryMutation.reset();
-  }
+    // queryMutation identity may change with status updates; sync only on URI changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialUri]);
 
   const handleExecute = () => {
     if (!uri.trim()) return;
@@ -284,11 +283,16 @@ export function DroidProvidersTab() {
     );
   }, [providers, search]);
 
-  const handleSelect = (authority: string) => {
-    setSelectedAuthority(authority);
-  };
-
   const queryUri = selectedAuthority ? `content://${selectedAuthority}/` : "";
+
+  const rowProps = useMemo(
+    () => ({
+      items: filtered,
+      selected: selectedAuthority,
+      onClick: setSelectedAuthority,
+    }),
+    [filtered, selectedAuthority],
+  );
 
   const listPane = (
     <div className="h-full flex flex-col">
@@ -322,11 +326,7 @@ export function DroidProvidersTab() {
               rowComponent={ProviderRow}
               rowCount={filtered.length}
               rowHeight={ITEM_HEIGHT}
-              rowProps={{
-                items: filtered,
-                selected: selectedAuthority,
-                onClick: handleSelect,
-              }}
+              rowProps={rowProps}
             />
           </div>
         )}

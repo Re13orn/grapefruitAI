@@ -6,9 +6,30 @@ import {
   process as serializeProcess,
 } from "../lib/serializer.ts";
 import { getDeviceMiddleware } from "../lib/middleware.ts";
+import { resolveDevice } from "../lib/device.ts";
 import env from "../lib/env.ts";
 
 const manager = frida.getDeviceManager();
+const SOCKET_PREFIX = "socket@";
+
+function normalizeRemoteHost(hostOrId: string): string {
+  return hostOrId.startsWith(SOCKET_PREFIX)
+    ? hostOrId.slice(SOCKET_PREFIX.length)
+    : hostOrId;
+}
+
+async function findRemoteDevice(hostOrId: string) {
+  const candidates = [hostOrId];
+  if (!hostOrId.startsWith(SOCKET_PREFIX)) {
+    candidates.push(`${SOCKET_PREFIX}${hostOrId}`);
+  }
+
+  for (const id of candidates) {
+    const dev = await manager.getDeviceById(id, env.timeout).catch(() => null);
+    if (dev && dev.type === "remote") return dev;
+  }
+  return null;
+}
 
 const routes = new Hono()
   .get("/devices", async (c) => {
@@ -21,7 +42,26 @@ const routes = new Hono()
   .get("/device/:device/apps", getDeviceMiddleware, async (c) => {
     const device = c.get("device");
     const apps = await device.enumerateApplications();
-    return c.json(apps.map(serializeApp));
+
+    // Some Android environments may return duplicate entries for the same
+    // package name. Keep one row per identifier to avoid unstable UI keys.
+    const dedup = new Map<string, ReturnType<typeof serializeApp>>();
+    for (const app of apps) {
+      const next = serializeApp(app);
+      const current = dedup.get(next.identifier);
+
+      if (!current) {
+        dedup.set(next.identifier, next);
+        continue;
+      }
+
+      // Prefer running instance over background/unknown pid.
+      if (current.pid === 0 && next.pid !== 0) {
+        dedup.set(next.identifier, next);
+      }
+    }
+
+    return c.json(Array.from(dedup.values()));
   })
   .get("/device/:device/processes", getDeviceMiddleware, async (c) => {
     const device = c.get("device");
@@ -43,7 +83,11 @@ const routes = new Hono()
       return c.text("device not found", 404);
     }
 
-    const device = await frida.getDevice(deviceId);
+    const device = await resolveDevice(deviceId).catch(() => null);
+    if (!device) {
+      return c.text("device not found", 404);
+    }
+
     const apps = await device
       .enumerateApplications({
         identifiers: [bundle],
@@ -91,19 +135,16 @@ const routes = new Hono()
   })
   .put("/devices/remote/:hostname", async (c) => {
     const hostname = c.req.param("hostname");
-    await manager.addRemoteDevice(hostname);
+    await manager.addRemoteDevice(normalizeRemoteHost(hostname));
     return c.body(null, 204);
   })
   .delete("/devices/remote/:hostname", async (c) => {
     const hostname = c.req.param("hostname");
-    const deviceExists = await manager
-      .getDeviceById(hostname, env.timeout)
-      .then((dev) => dev.type === "remote")
-      .catch(() => false);
+    const dev = await findRemoteDevice(hostname);
+    const deviceExists = !!dev;
 
     if (deviceExists) {
-      const prefix = "socket@";
-      const host = hostname.substring(prefix.length);
+      const host = normalizeRemoteHost(hostname);
       await manager.removeRemoteDevice(host);
       return c.body(null, 204);
     } else {

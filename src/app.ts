@@ -12,6 +12,8 @@ import deviceRoutes from "./routes/devices.ts";
 import transferRoutes from "./routes/transfer.ts";
 import dataRoutes from "./routes/data.ts";
 import llmRoutes from "./routes/llm.ts";
+import mcpRoutes from "./routes/mcp.ts";
+import scenarioRoutes from "./routes/scenarios.ts";
 
 const app = new Hono();
 
@@ -47,6 +49,8 @@ api.route("/", deviceRoutes);
 api.route("/", transferRoutes);
 api.route("/", dataRoutes);
 api.route("/", llmRoutes);
+api.route("/", mcpRoutes);
+api.route("/", scenarioRoutes);
 
 app.route("/api", api);
 

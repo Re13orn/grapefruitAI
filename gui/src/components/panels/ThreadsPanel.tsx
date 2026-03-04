@@ -40,6 +40,8 @@ export function ThreadsPanel() {
     );
   }, [threads, search]);
 
+  const rowProps = useMemo(() => ({ threads: filtered }), [filtered]);
+
   return (
     <div className="h-full flex flex-col">
       <div className="p-4 space-y-4">
@@ -82,7 +84,7 @@ export function ThreadsPanel() {
               rowComponent={ThreadRow}
               rowCount={filtered.length}
               rowHeight={ITEM_HEIGHT}
-              rowProps={{ threads: filtered }}
+              rowProps={rowProps}
             />
           </div>
         )}

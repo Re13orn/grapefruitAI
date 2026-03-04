@@ -27,7 +27,8 @@
     "build:npm": "node scripts/build-npm.ts && tsdown",
     "build:cli": "bun i && bun scripts/build-bun.ts",
     "build:all": "bun i && bun scripts/build-bun.ts cross",
-    "build:skills": "bun scripts/skills.ts"
+    "build:skills": "bun scripts/skills.ts",
+    "validate:skills": "bun scripts/skills-validate.ts"
   },
   "keywords": [
     "mobile",

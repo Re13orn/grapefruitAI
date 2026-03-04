@@ -1,4 +1,3 @@
-import { hostname } from "node:os";
 import { parseArgs } from "node:util";
 
 import { schema } from "./cli.ts";
@@ -18,7 +17,7 @@ for (const [argKey, envKey] of Object.entries(mapping)) {
   }
 }
 
-const defaultHost = dev ? hostname() : "localhost";
+const defaultHost = "127.0.0.1";
 const host =
   (typeof argv.host === "string" ? argv.host : process.env.HOST) || defaultHost;
 const port = parseInt(argv.port as string, 10) || 31337;

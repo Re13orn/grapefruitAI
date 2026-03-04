@@ -1,0 +1,48 @@
+{
+  "name": "Crypto smoke baseline",
+  "description": "Validate crypto hooks and storage signals during app startup",
+  "tags": [
+    "smoke",
+    "crypto",
+    "startup"
+  ],
+  "steps": [
+    {
+      "type": "clear_history",
+      "kind": "hooks"
+    },
+    {
+      "type": "clear_history",
+      "kind": "crypto"
+    },
+    {
+      "type": "clear_logs",
+      "log": "all"
+    },
+    {
+      "type": "note",
+      "text": "waiting for startup hooks"
+    },
+    {
+      "type": "sleep",
+      "ms": 2500
+    },
+    {
+      "type": "assert",
+      "assertion": {
+        "type": "history_count",
+        "kind": "crypto",
+        "op": "gte",
+        "value": 1
+      }
+    },
+    {
+      "type": "assert",
+      "assertion": {
+        "type": "history_contains",
+        "kind": "hooks",
+        "keyword": "Cipher.doFinal"
+      }
+    }
+  ]
+}

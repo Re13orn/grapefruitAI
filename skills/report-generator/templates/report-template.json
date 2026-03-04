@@ -1,0 +1,30 @@
+{
+  "target": {
+    "deviceId": "emulator-5554",
+    "identifier": "com.example.app",
+    "platform": "droid",
+    "appVersion": "1.0.0"
+  },
+  "runs": {
+    "total": 3,
+    "passed": 2,
+    "failed": 1,
+    "errored": 0
+  },
+  "findings": [
+    {
+      "id": "evt-crypto-001",
+      "risk": "high",
+      "title": "Sensitive plaintext observed before encryption",
+      "status": "open",
+      "evidence": [
+        "crypto:callId=abc123"
+      ]
+    }
+  ],
+  "nextActions": [
+    "Mask secrets before logging.",
+    "Re-run crypto smoke scenario after patch.",
+    "Compare run delta against baseline report."
+  ]
+}

@@ -3,6 +3,8 @@ import type { Device, ScriptExports, ScriptMessageHandler } from "./xvii.ts";
 import { agent } from "./assets.ts";
 
 export class Transport {
+  private closed = false;
+
   constructor(
     public readonly script: {
       exports: ScriptExports;
@@ -15,8 +17,20 @@ export class Transport {
   ) {}
 
   async close(): Promise<void> {
-    await this.script.unload();
-    await this.session.detach();
+    if (this.closed) return;
+    this.closed = true;
+
+    const [unloadResult, detachResult] = await Promise.allSettled([
+      this.script.unload(),
+      this.session.detach(),
+    ]);
+
+    if (unloadResult.status === "rejected") {
+      throw unloadResult.reason;
+    }
+    if (detachResult.status === "rejected") {
+      throw detachResult.reason;
+    }
   }
 }
 

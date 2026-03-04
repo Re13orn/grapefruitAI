@@ -1,0 +1,37 @@
+{
+  "summary": {
+    "high": 1,
+    "medium": 1,
+    "low": 1
+  },
+  "events": [
+    {
+      "id": "evt-crypto-001",
+      "risk": "high",
+      "category": "crypto",
+      "title": "Sensitive plaintext observed before encryption",
+      "reason": "User token found in Cipher.doFinal input buffer",
+      "evidence": [
+        {
+          "kind": "crypto",
+          "ref": "callId=abc123"
+        }
+      ],
+      "recommendation": "Mask token before logging and avoid plaintext persistence in memory snapshots."
+    },
+    {
+      "id": "evt-storage-001",
+      "risk": "medium",
+      "category": "storage",
+      "title": "Potential sensitive data in SharedPreferences",
+      "reason": "sharedpref key userInfo contains auth-like payload",
+      "evidence": [
+        {
+          "kind": "hooks",
+          "ref": "SharedPreferences.getString(userInfo)"
+        }
+      ],
+      "recommendation": "Store only opaque references or encrypted values in preferences."
+    }
+  ]
+}
