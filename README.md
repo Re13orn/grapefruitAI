@@ -15,6 +15,14 @@ Inspect, hook, and modify mobile apps through a web-based interface.
 
 Now it supports both iOS and Android!
 
+## Fork Notice (Re13orn/grapefruitAI)
+
+This repository is an actively maintained fork of `ChiChou/grapefruit`, and has diverged with substantial new capabilities.
+
+- Fork repository: [Re13orn/grapefruitAI](https://github.com/Re13orn/grapefruitAI)
+- Upstream repository: [ChiChou/grapefruit](https://github.com/ChiChou/grapefruit)
+- Major fork changes summary (ZH-CN): [docs/fork-changes.zh-CN.md](docs/fork-changes.zh-CN.md)
+
 ## Features
 
 - **Runtime Method Hooking** - Intercept native and managed functions with structured logging
