@@ -75,6 +75,27 @@ function normalizeLabel(label: unknown): string {
   return String(label);
 }
 
+function tryPatchMethod(
+  target: object,
+  key: string,
+  replacement: unknown,
+): (() => void) | null {
+  const record = target as Record<string, unknown>;
+  const original = record[key];
+  try {
+    record[key] = replacement;
+  } catch {
+    return null;
+  }
+  return () => {
+    try {
+      record[key] = original;
+    } catch {
+      // ignored
+    }
+  };
+}
+
 class ScriptHookTracker {
   readonly startedAt = new Date().toISOString();
   private readonly hooked = new Set<string>();
@@ -159,7 +180,8 @@ function withInterceptorTracking(
   if (!interceptor || typeof interceptor.attach !== "function") return null;
 
   const originalAttach = interceptor.attach;
-  interceptor.attach = function patchedAttach(
+  const restoreAttach = tryPatchMethod(interceptor as object, "attach", function patchedAttach(
+    this: unknown,
     target: unknown,
     callbacks: unknown,
     data?: unknown,
@@ -191,11 +213,12 @@ function withInterceptorTracking(
         tracker.trackFailure(label, error);
         throw error;
     }
-  };
-
-  return () => {
-    interceptor.attach = originalAttach;
-  };
+  });
+  if (!restoreAttach) {
+    tracker.trackFailure("Interceptor.attach", "attach is read-only");
+    return null;
+  }
+  return restoreAttach;
 }
 
 function withObjCImplementTracking(
@@ -207,7 +230,8 @@ function withObjCImplementTracking(
   if (!objc || typeof objc.implement !== "function") return null;
 
   const originalImplement = objc.implement;
-  objc.implement = function patchedImplement(
+  const restoreImplement = tryPatchMethod(objc as object, "implement", function patchedImplement(
+    this: unknown,
     method: unknown,
     fn: unknown,
   ) {
@@ -231,11 +255,12 @@ function withObjCImplementTracking(
       tracker.trackFailure(label, error);
       throw error;
     }
-  };
-
-  return () => {
-    objc.implement = originalImplement;
-  };
+  });
+  if (!restoreImplement) {
+    tracker.trackFailure("ObjC.implement", "implement is read-only");
+    return null;
+  }
+  return restoreImplement;
 }
 
 function createJavaMethodProxy(
@@ -346,7 +371,10 @@ function withJavaImplementationTracking(
   const classCache = new WeakMap<object, unknown>();
   const methodCache = new WeakMap<object, unknown>();
 
-  java.use = function patchedJavaUse(className: string) {
+  const restoreUse = tryPatchMethod(java as object, "use", function patchedJavaUse(
+    this: unknown,
+    className: string,
+  ) {
     const label = `Java.use(${className})`;
     try {
       const use = originalUse as (className: string) => unknown;
@@ -366,11 +394,12 @@ function withJavaImplementationTracking(
       tracker.trackFailure(label, error);
       throw error;
     }
-  };
-
-  return () => {
-    java.use = originalUse;
-  };
+  });
+  if (!restoreUse) {
+    tracker.trackFailure("Java.use", "use is read-only");
+    return null;
+  }
+  return restoreUse;
 }
 
 function withHookTracking(tracker: ScriptHookTracker): () => void {
