@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/resizable";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { useRepl } from "@/context/useRepl";
-import { useSession } from "@/context/SessionContext";
+import { Status, useSession } from "@/context/SessionContext";
 
 async function loadFridaTypes(): Promise<Record<string, string>> {
   const res = await fetch("/api/d.ts/pack");
@@ -71,7 +71,7 @@ export function CodeScratchPadTab() {
   const { t } = useTranslation();
   const { theme } = useTheme();
   const { content, setContent, save, dirty } = useRepl();
-  const { socket } = useSession();
+  const { socket, status } = useSession();
   const [copied, setCopied] = useState(false);
   const [entries, setEntries] = useState<EvalEntry[]>([]);
   const listEndRef = useRef<HTMLDivElement>(null);
@@ -86,7 +86,9 @@ export function CodeScratchPadTab() {
   }, [entries]);
 
   const handleRun = useCallback(() => {
-    if (!socket || !content.trim()) return;
+    if (!socket || status !== Status.Ready || !socket.connected || !content.trim()) {
+      return;
+    }
     save();
     const id = nextId++;
     setEntries((prev) => [...prev, { id, source: content, status: "loading" }]);
@@ -111,7 +113,7 @@ export function CodeScratchPadTab() {
         ),
       );
     });
-  }, [socket, content, save]);
+  }, [socket, status, content, save]);
 
   const handleClearEntries = useCallback(() => setEntries([]), []);
 
@@ -181,18 +183,24 @@ export function CodeScratchPadTab() {
   }, [content]);
 
   const running = entries.some((e) => e.status === "loading");
+  const canRun =
+    !!socket &&
+    socket.connected &&
+    status === Status.Ready &&
+    !running &&
+    !!content.trim();
 
   return (
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between px-3 py-1.5 border-b bg-muted/30">
         <div className="flex items-center gap-1">
-          <Button
-            variant="default"
-            size="sm"
-            className="h-7 px-2 gap-1.5"
-            onClick={handleRun}
-            disabled={running || !socket || !content.trim()}
-          >
+            <Button
+              variant="default"
+              size="sm"
+              className="h-7 px-2 gap-1.5"
+              onClick={handleRun}
+              disabled={!canRun}
+            >
             {running ? (
               <Spinner className="h-3.5 w-3.5" />
             ) : (
